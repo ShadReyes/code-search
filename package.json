@@ -1,0 +1,30 @@
+{
+  "name": "code-search",
+  "version": "0.1.0",
+  "description": "Local semantic code search CLI for NextJS monorepos",
+  "type": "module",
+  "bin": {
+    "code-search": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@lancedb/lancedb": "^0.26.2",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "glob": "^11.0.1",
+    "lodash.merge": "^4.6.2",
+    "minimatch": "^9.0.0",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "0.25.3"
+  },
+  "devDependencies": {
+    "@types/lodash.merge": "^4.6.9",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
