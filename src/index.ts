@@ -2,8 +2,8 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, existsSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { indexFull, indexIncremental } from './indexer.js';
 import { searchCode, formatResults } from './search.js';
 import { initStore, getStats } from './store.js';
@@ -12,12 +12,41 @@ import { DEFAULT_CONFIG } from './types.js';
 const program = new Command();
 
 function resolveRepo(repo?: string): string {
-  const resolved = repo || process.env.CODE_SEARCH_REPO;
-  if (!resolved) {
-    console.error(chalk.red('Error: --repo is required (or set CODE_SEARCH_REPO env var)'));
+  const raw = repo || process.env.CODE_SEARCH_REPO;
+  if (!raw) {
+    console.error(chalk.red(
+      'Error: Repository path is required.\n\n' +
+      'Provide it via:\n' +
+      '  --repo /path/to/your/repo\n' +
+      '  CODE_SEARCH_REPO=/path/to/your/repo (env var)'
+    ));
     process.exit(1);
   }
+
+  const resolved = resolve(raw);
+
+  try {
+    const stat = statSync(resolved);
+    if (!stat.isDirectory()) {
+      console.error(chalk.red(`Error: "${resolved}" is not a directory.`));
+      process.exit(1);
+    }
+  } catch {
+    console.error(chalk.red(
+      `Error: Cannot access "${resolved}".\n` +
+      'Check that the path exists and you have read permission.'
+    ));
+    process.exit(1);
+  }
+
   return resolved;
+}
+
+function formatError(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
 }
 
 program
@@ -40,7 +69,10 @@ program
         await indexIncremental(repoRoot, opts.verbose);
       }
     } catch (err) {
-      console.error(chalk.red(`Index failed: ${err instanceof Error ? err.message : err}`));
+      console.error(chalk.red(`\nIndex failed:\n${formatError(err)}`));
+      if (formatError(err).includes('Ollama')) {
+        console.error(chalk.dim('\nTip: Make sure Ollama is running and the model is pulled.'));
+      }
       process.exit(1);
     }
   });
@@ -58,7 +90,14 @@ program
       const results = await searchCode(search, repoRoot, opts.limit, opts.filter, opts.verbose);
       console.log(formatResults(results, search));
     } catch (err) {
-      console.error(chalk.red(`Search failed: ${err instanceof Error ? err.message : err}`));
+      const msg = formatError(err);
+      console.error(chalk.red(`\nSearch failed:\n${msg}`));
+      if (msg.includes('No existing dataset') || msg.includes('table') || msg.includes('not found')) {
+        console.error(chalk.dim(
+          '\nTip: You need to index the repo first:\n' +
+          `  npx tsx ${process.argv[1]} index --full --repo ${repoRoot}`
+        ));
+      }
       process.exit(1);
     }
   });
@@ -75,8 +114,12 @@ program
       console.log(chalk.blue('Index Statistics'));
       console.log(`  Total chunks: ${chalk.white(stats.totalChunks.toString())}`);
       console.log(`  Unique files: ${chalk.white(stats.uniqueFiles.toString())}`);
+
+      if (stats.totalChunks === 0) {
+        console.log(chalk.dim('\nNo data indexed yet. Run: code-search index --full --repo <path>'));
+      }
     } catch (err) {
-      console.error(chalk.red(`Stats failed: ${err instanceof Error ? err.message : err}`));
+      console.error(chalk.red(`\nStats failed:\n${formatError(err)}`));
       process.exit(1);
     }
   });
@@ -91,6 +134,7 @@ program
 
     if (existsSync(configPath)) {
       console.log(chalk.yellow(`Config already exists at ${configPath}`));
+      console.log(chalk.dim('Delete it first if you want to regenerate defaults.'));
       return;
     }
 

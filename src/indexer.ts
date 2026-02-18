@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { execSync } from 'node:child_process';
 import { glob } from 'glob';
@@ -66,11 +66,22 @@ function discoverFiles(repoRoot: string, config: CodeSearchConfig): string[] {
   // Deduplicate
   const unique = [...new Set(allFiles)];
 
-  // Filter by maxFileLines
+  // Filter by maxFileLines, skip directories/unreadable
   return unique.filter(filePath => {
-    const content = readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n').length;
-    if (lines > config.maxFileLines) return false;
+    try {
+      const stat = statSync(filePath);
+      if (!stat.isFile()) return false;
+    } catch {
+      return false;
+    }
+
+    try {
+      const content = readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n').length;
+      if (lines > config.maxFileLines) return false;
+    } catch {
+      return false;
+    }
 
     // Skip test files if indexTests is false
     if (!config.indexTests) {
@@ -155,17 +166,10 @@ export async function indexFull(
     return;
   }
 
-  // Embed in batches
+  // Embed in batches (embedBatch handles internal batching + fallback)
   const contents = allChunks.map(c => c.content);
-  const vectors: number[][] = [];
-
-  for (let i = 0; i < contents.length; i += config.embeddingBatchSize) {
-    const batch = contents.slice(i, i + config.embeddingBatchSize);
-    const batchEnd = Math.min(i + config.embeddingBatchSize, contents.length);
-    console.log(chalk.dim(`Embedding chunks ${i + 1}-${batchEnd}/${contents.length}...`));
-    const batchVectors = await embedBatch(batch, config.embeddingModel, config.embeddingBatchSize);
-    vectors.push(...batchVectors);
-  }
+  console.log(chalk.dim(`Embedding ${contents.length} chunks (batch size ${config.embeddingBatchSize})...`));
+  const vectors = await embedBatch(contents, config.embeddingModel, config.embeddingBatchSize, dimension, verbose);
 
   // Insert (overwrite)
   await dropTable();
@@ -277,7 +281,7 @@ export async function indexIncremental(
   if (allChunks.length > 0) {
     // Embed new chunks
     const contents = allChunks.map(c => c.content);
-    const vectors = await embedBatch(contents, config.embeddingModel, config.embeddingBatchSize);
+    const vectors = await embedBatch(contents, config.embeddingModel, config.embeddingBatchSize, 768, verbose);
     await insertChunks(allChunks, vectors);
   }
 
