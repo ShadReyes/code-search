@@ -3,3 +3,15 @@ dist/
 .lance/
 .code-search-state.json
 *.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*

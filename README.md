@@ -15,7 +15,7 @@ ollama pull nomic-embed-text
 ## Installation
 
 ```bash
-git clone git@github.com:ShadReyes/code-search.git
+git clone https://github.com/ShadReyes/code-search.git
 cd code-search
 npm install
 ```

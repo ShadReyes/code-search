@@ -3,6 +3,27 @@
   "version": "0.1.0",
   "description": "Local semantic code search CLI for NextJS monorepos",
   "type": "module",
+  "license": "MIT",
+  "author": "ShadReyes",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ShadReyes/code-search.git"
+  },
+  "homepage": "https://github.com/ShadReyes/code-search",
+  "bugs": {
+    "url": "https://github.com/ShadReyes/code-search/issues"
+  },
+  "keywords": [
+    "code-search",
+    "semantic-search",
+    "tree-sitter",
+    "ollama",
+    "lancedb",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "bin": {
     "code-search": "./dist/index.js"
   },
