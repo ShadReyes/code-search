@@ -30,7 +30,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "bench": "vitest bench",
+    "bench:unit": "vitest bench bench/unit",
+    "bench:integration": "vitest bench bench/integration",
+    "bench:no-ollama": "MOCK_OLLAMA=1 vitest bench"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.26.2",
@@ -46,6 +50,7 @@
     "@types/lodash.merge": "^4.6.9",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   }
 }

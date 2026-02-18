@@ -50,7 +50,7 @@ export function loadConfig(repoRoot: string, verbose: boolean = false): CodeSear
   return config;
 }
 
-function discoverFiles(repoRoot: string, config: CodeSearchConfig): string[] {
+export function discoverFiles(repoRoot: string, config: CodeSearchConfig): string[] {
   const allFiles: string[] = [];
 
   for (const pattern of config.include) {
@@ -93,7 +93,7 @@ function discoverFiles(repoRoot: string, config: CodeSearchConfig): string[] {
   });
 }
 
-function isTestFile(relativePath: string): boolean {
+export function isTestFile(relativePath: string): boolean {
   return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(relativePath) ||
     relativePath.includes('__tests__/') ||
     relativePath.includes('__mocks__/');

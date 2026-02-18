@@ -10,8 +10,8 @@ const TABLE_NAME = 'chunks';
 let db: Connection;
 let table: Table | null = null;
 
-export async function initStore(): Promise<void> {
-  const dbPath = `${TOOL_ROOT}/.lance`;
+export async function initStore(customDbPath?: string): Promise<void> {
+  const dbPath = customDbPath || `${TOOL_ROOT}/.lance`;
   db = await connect(dbPath);
   const tables = await db.tableNames();
   if (tables.includes(TABLE_NAME)) {
@@ -102,6 +102,11 @@ export async function getStats(): Promise<{ totalChunks: number; uniqueFiles: nu
   const rows = await table.query().select(['file_path']).toArray();
   const uniqueFiles = new Set(rows.map((r: Record<string, unknown>) => r.file_path)).size;
   return { totalChunks, uniqueFiles };
+}
+
+export function resetStore(): void {
+  db = null as unknown as Connection;
+  table = null;
 }
 
 export async function dropTable(): Promise<void> {

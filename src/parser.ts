@@ -70,4 +70,8 @@ export function parseFile(filePath: string, content: string): Tree {
   return parser.parse(content);
 }
 
+export function _resetForBenchmark(): void {
+  initialized = false;
+}
+
 export type { Tree, Node };
