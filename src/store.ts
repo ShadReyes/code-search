@@ -32,7 +32,7 @@ function chunkToRecord(chunk: CodeChunk, vector: number[]): Record<string, unkno
     language: chunk.language,
     exported: chunk.exported,
     framework_role: chunk.framework_role || '',
-    vector: Float32Array.from(vector),
+    vector,
   };
 }
 
