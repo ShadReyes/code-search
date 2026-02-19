@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { CodeSearchConfig, GitHistorySearchResult } from '../types.js';
+import type { CodeSearchConfig, GitHistorySearchResult, SearchResult } from '../types.js';
 import { initStore, initGitHistoryTable, searchGitHistory } from '../store.js';
 import { searchCode } from '../search.js';
 import { embedSingle } from '../embedder.js';
@@ -90,7 +90,7 @@ export async function explain(
   let hasGitResults = false;
 
   // Search code index
-  let codeResults;
+  let codeResults: SearchResult[] = [];
   try {
     codeResults = await searchCode(query, repoPath, 5, undefined, verbose);
     hasCodeResults = codeResults.length > 0;

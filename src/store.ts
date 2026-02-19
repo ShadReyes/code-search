@@ -59,7 +59,7 @@ function recordToChunk(record: Record<string, unknown>): CodeChunk {
     content: record.content as string,
     language: record.language as string,
     exported: record.exported as boolean,
-    framework_role: (record.framework_role as string) || undefined,
+    framework_role: (record.framework_role as CodeChunk['framework_role']) || undefined,
   };
 }
 
