@@ -130,6 +130,7 @@ export async function embedBatch(
   batchSize: number = 50,
   dimension: number = 768,
   verbose: boolean = false,
+  prefix?: string,
 ): Promise<number[][]> {
   const allEmbeddings: number[][] = [];
   const totalBatches = Math.ceil(texts.length / batchSize);
@@ -138,7 +139,9 @@ export async function embedBatch(
   for (let i = 0; i < texts.length; i += batchSize) {
     const batchNum = Math.floor(i / batchSize) + 1;
     const batchEnd = Math.min(i + batchSize, texts.length);
-    const batch = texts.slice(i, batchEnd).map(truncateForEmbedding);
+    const batch = texts.slice(i, batchEnd)
+      .map(t => prefix ? prefix + t : t)
+      .map(truncateForEmbedding);
 
     process.stdout.write(
       `\r${chalk.dim(`Embedding batch ${batchNum}/${totalBatches} (chunks ${i + 1}-${batchEnd}/${texts.length})...`)}`
@@ -173,8 +176,9 @@ export async function embedBatch(
   return allEmbeddings;
 }
 
-export async function embedSingle(text: string, model: string): Promise<number[]> {
-  const truncated = truncateForEmbedding(text);
+export async function embedSingle(text: string, model: string, prefix?: string): Promise<number[]> {
+  const prefixed = prefix ? prefix + text : text;
+  const truncated = truncateForEmbedding(prefixed);
   const [embedding] = await embedOneBatch([truncated], model);
   return embedding;
 }
