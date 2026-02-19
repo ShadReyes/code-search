@@ -4,10 +4,14 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { writeFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { indexFull, indexIncremental } from './indexer.js';
+import { indexFull, indexIncremental, loadConfig } from './indexer.js';
 import { searchCode, formatResults } from './search.js';
-import { initStore, getStats } from './store.js';
+import { initStore, getStats, getGitStats, initGitHistoryTable } from './store.js';
 import { DEFAULT_CONFIG } from './types.js';
+import { indexGitFull, indexGitIncremental } from './git/indexer.js';
+import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
+import { gitBlame, pickaxeSearch } from './git/extractor.js';
+import { explain } from './git/cross-ref.js';
 
 const program = new Command();
 
@@ -146,6 +150,165 @@ program
     writeFileSync(configPath, JSON.stringify(configWithComments, null, 2) + '\n');
     console.log(chalk.green(`Created config at ${configPath}`));
     console.log(chalk.dim('Edit this file to customize indexing behavior.'));
+  });
+
+// --- Git History Commands ---
+
+program
+  .command('git-index')
+  .description('Index git history for semantic search')
+  .option('--full', 'Force a full re-index (default: incremental)')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--verbose', 'Show detailed output')
+  .action(async (opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      if (opts.full) {
+        await indexGitFull(repoRoot, config, opts.verbose);
+      } else {
+        await indexGitIncremental(repoRoot, config, opts.verbose);
+      }
+    } catch (err) {
+      console.error(chalk.red(`\nGit index failed:\n${formatError(err)}`));
+      if (formatError(err).includes('Ollama')) {
+        console.error(chalk.dim('\nTip: Make sure Ollama is running and the model is pulled.'));
+      }
+      process.exit(1);
+    }
+  });
+
+program
+  .command('git-search <query>')
+  .description('Search git history semantically')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--after <date>', 'Filter commits after date (ISO 8601)')
+  .option('--author <name>', 'Filter by author name')
+  .option('--file <path>', 'Filter by file path')
+  .option('--type <type>', 'Filter by commit type (feat, fix, refactor, ...)')
+  .option('--limit <n>', 'Maximum number of results', parseInt)
+  .option('--verbose', 'Show detailed output')
+  .action(async (query, opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      const results = await searchGitHistoryQuery(query, repoRoot, config, {
+        after: opts.after,
+        author: opts.author,
+        file: opts.file,
+        type: opts.type,
+        limit: opts.limit,
+      });
+      console.log(formatGitResults(results, query));
+    } catch (err) {
+      const msg = formatError(err);
+      console.error(chalk.red(`\nGit search failed:\n${msg}`));
+      if (msg.includes('table') || msg.includes('not found')) {
+        console.error(chalk.dim(
+          '\nTip: You need to index git history first:\n' +
+          `  code-search git-index --full --repo ${repoRoot}`
+        ));
+      }
+      process.exit(1);
+    }
+  });
+
+program
+  .command('git-blame <file> <start> <end>')
+  .description('Show line-level git blame')
+  .option('--repo <path>', 'Path to the repository root')
+  .action(async (file, start, end, opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const results = await gitBlame(repoRoot, file, parseInt(start), parseInt(end));
+      if (results.length === 0) {
+        console.log(chalk.yellow('No blame results found.'));
+        return;
+      }
+      console.log(chalk.bold(`Blame for ${file}:${start}-${end}`));
+      console.log('');
+      for (const r of results) {
+        console.log(
+          `${chalk.yellow(r.sha.slice(0, 7))} ${chalk.dim(r.date.slice(0, 10))} ${chalk.green(r.author.padEnd(20))} ${chalk.dim(`L${r.lineStart}`)} ${r.content}`,
+        );
+      }
+    } catch (err) {
+      console.error(chalk.red(`\nBlame failed:\n${formatError(err)}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('git-pickaxe <search>')
+  .description('Find when a string was introduced or removed')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--limit <n>', 'Maximum number of results', parseInt)
+  .action(async (search, opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const results = await pickaxeSearch(repoRoot, search, opts.limit || 20);
+      if (results.length === 0) {
+        console.log(chalk.yellow(`No commits found introducing/removing "${search}"`));
+        return;
+      }
+      console.log(chalk.bold(`Commits introducing/removing "${search}":`));
+      console.log('');
+      for (const r of results) {
+        console.log(
+          `${chalk.yellow(r.sha.slice(0, 7))} ${chalk.dim(r.date.slice(0, 10))} ${chalk.green(r.author)}`,
+        );
+        console.log(`  ${r.subject}`);
+        if (r.files.length > 0) {
+          console.log(`  ${chalk.dim(`Files: ${r.files.join(', ')}`)}`);
+        }
+        console.log('');
+      }
+    } catch (err) {
+      console.error(chalk.red(`\nPickaxe search failed:\n${formatError(err)}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('git-stats')
+  .description('Show git history index statistics')
+  .option('--repo <path>', 'Path to the repository root')
+  .action(async (opts) => {
+    try {
+      resolveRepo(opts.repo); // validate
+      await initStore();
+      await initGitHistoryTable();
+      const stats = await getGitStats();
+      console.log(chalk.blue('Git History Index Statistics'));
+      console.log(`  Total chunks:   ${chalk.white(stats.totalChunks.toString())}`);
+      console.log(`  Unique commits: ${chalk.white(stats.uniqueCommits.toString())}`);
+      if (stats.dateRange) {
+        console.log(`  Date range:     ${chalk.white(`${stats.dateRange.earliest.slice(0, 10)} to ${stats.dateRange.latest.slice(0, 10)}`)}`);
+      }
+      if (stats.totalChunks === 0) {
+        console.log(chalk.dim('\nNo git history indexed yet. Run: code-search git-index --full --repo <path>'));
+      }
+    } catch (err) {
+      console.error(chalk.red(`\nGit stats failed:\n${formatError(err)}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('explain <query>')
+  .description('Combined code context + git history search')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--verbose', 'Show detailed output')
+  .action(async (query, opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      const output = await explain(query, repoRoot, config, opts.verbose);
+      console.log(output);
+    } catch (err) {
+      console.error(chalk.red(`\nExplain failed:\n${formatError(err)}`));
+      process.exit(1);
+    }
   });
 
 program.parse();
