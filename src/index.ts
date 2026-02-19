@@ -159,11 +159,15 @@ program
   .description('Index git history for semantic search')
   .option('--full', 'Force a full re-index (default: incremental)')
   .option('--repo <path>', 'Path to the repository root')
+  .option('--max-commits <n>', 'Max commits to index (default: 500, 0 = unlimited)', parseInt)
   .option('--verbose', 'Show detailed output')
   .action(async (opts) => {
     const repoRoot = resolveRepo(opts.repo);
     try {
       const config = loadConfig(repoRoot, opts.verbose);
+      if (opts.maxCommits !== undefined) {
+        config.git!.maxCommits = opts.maxCommits;
+      }
       if (opts.full) {
         await indexGitFull(repoRoot, config, opts.verbose);
       } else {
