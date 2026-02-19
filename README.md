@@ -88,14 +88,21 @@ Create `.code-searchrc.json` at the repo root (or use `code-search init`):
 
 ```
 src/
-  index.ts      CLI entry point (Commander.js)
-  types.ts      Core types: CodeChunk, SearchResult, IndexState, Config
-  parser.ts     Tree-sitter WASM initialization + file parsing
-  chunker.ts    AST → CodeChunk[] with NextJS-aware extraction
-  embedder.ts   Ollama API client (batch embed, health check)
-  store.ts      LanceDB vector store wrapper
-  indexer.ts    Full + incremental indexing orchestration
-  search.ts     Query embedding + vector search + formatting
+  index.ts        CLI entry point (Commander.js)
+  types.ts        Core types: CodeChunk, SearchResult, IndexState, Config, Git types
+  parser.ts       Tree-sitter WASM initialization + file parsing
+  chunker.ts      AST → CodeChunk[] with NextJS-aware extraction
+  embedder.ts     Ollama API client (batch embed, health check, prefix support)
+  store.ts        LanceDB vector store wrapper (code + git tables)
+  indexer.ts      Full + incremental code indexing orchestration
+  search.ts       Code query embedding + vector search + formatting
+  git/
+    extractor.ts  Git command wrappers (log, blame, pickaxe, grep, diff)
+    chunker.ts    GitCommitRaw → GitHistoryChunk[] (3 chunk levels)
+    enricher.ts   Low-quality commit message enrichment
+    indexer.ts     Git history indexing pipeline orchestration
+    search.ts     Hybrid query router (5 strategies)
+    cross-ref.ts  Code ↔ git history cross-referencing
 ```
 
 ### Chunking Rules
@@ -137,6 +144,87 @@ src/
 - Cosine distance for similarity
 - State tracked in `code-search/.code-search-state.json`
 
+## Git History Search
+
+Semantic search over git commit history. Indexes commits into a separate LanceDB table and provides hybrid search across 5 strategies.
+
+### Chunk Levels
+
+- **commit_summary** — natural language description of each commit (always generated)
+- **file_diff** — per-file diff content for each changed file (configurable)
+- **merge_group** — aggregated merge commit summaries (configurable)
+
+### Git Commands
+
+```bash
+# Full git history index
+npx tsx src/index.ts git-index --full --repo /path/to/repo
+
+# Incremental (new commits since last index)
+npx tsx src/index.ts git-index --repo /path/to/repo
+
+# Semantic git search
+npx tsx src/index.ts git-search "why did we switch auth providers" --repo /path/to/repo
+
+# Search with filters
+npx tsx src/index.ts git-search "auth changes" --after 2025-01-01 --repo /path/to/repo
+npx tsx src/index.ts git-search "API updates" --author "John" --type feat --repo /path/to/repo
+
+# Line-level blame
+npx tsx src/index.ts git-blame src/auth/login.ts 45 60 --repo /path/to/repo
+
+# Find when a string was introduced
+npx tsx src/index.ts git-pickaxe "getUserById" --repo /path/to/repo
+
+# Git index statistics
+npx tsx src/index.ts git-stats --repo /path/to/repo
+
+# Combined code + git history search (the killer feature)
+npx tsx src/index.ts explain "authenticateUser" --repo /path/to/repo
+```
+
+### Query Router Strategies
+
+The git search automatically classifies queries:
+
+| Strategy | Trigger Examples | What It Does |
+|----------|-----------------|--------------|
+| `vector` | "why did we...", general questions | Semantic vector search |
+| `temporal_vector` | "recently", "last month", "since 2025" | Vector search + date filter |
+| `pickaxe` | "when was X introduced" | `git log -S` + LanceDB lookup |
+| `blame` | "who wrote", "blame" | `git blame` + LanceDB lookup |
+| `structured_git` | "what changed in", "commits by" | File/author filters + grep |
+
+### The `explain` Command
+
+Bridges code search and git history. For each code match, it finds related commits. Shows both code context and change history in one view — ideal for understanding *what* code does and *why* it was written.
+
+### Git Config Options
+
+Add to `.code-searchrc.json`:
+
+```json
+{
+  "git": {
+    "includeFileChunks": true,
+    "includeMergeGroups": true,
+    "maxDiffLinesPerFile": 200,
+    "enrichLowQualityMessages": true,
+    "lowQualityThreshold": 10,
+    "skipBotAuthors": ["dependabot", "renovate", "github-actions"],
+    "skipMessagePatterns": ["^Merge branch", "lock file"],
+    "maxCommits": 0
+  }
+}
+```
+
+### Scaling Notes
+
+- Streams commits via async generators — memory stays flat regardless of repo size
+- Batch embedding (50 chunks) with progressive flush to LanceDB
+- Incremental indexing only processes commits since last index
+- `maxCommits` can limit initial indexing for very large repos
+
 ## Using with Claude Code
 
 Add to your monorepo's `CLAUDE.md`:
@@ -147,9 +235,14 @@ Add to your monorepo's `CLAUDE.md`:
 Search the codebase semantically using the code-search CLI:
   npx tsx ~/code-search/src/index.ts query "<search>" --repo .
   npx tsx ~/code-search/src/index.ts index --repo .
+  npx tsx ~/code-search/src/index.ts git-search "<search>" --repo .
+  npx tsx ~/code-search/src/index.ts explain "<search>" --repo .
 
 Use `code-search query` before exploring unfamiliar parts of the codebase.
+Use `code-search git-search` to understand why code was changed.
+Use `code-search explain` for combined code + history context.
 Run `code-search index` after significant changes to keep the index fresh.
+Run `code-search git-index` after pulling to index new commits.
 ```
 
 ## Troubleshooting
@@ -169,6 +262,15 @@ The index may be corrupted. Run a full re-index:
 ```bash
 npx tsx src/index.ts index --full --repo /path/to/monorepo
 ```
+
+**"Not a git repository"**
+Ensure you're pointing `--repo` at a directory containing a `.git` folder.
+
+**Slow git indexing**
+- Large repos with thousands of commits take time on first index
+- Set `"maxCommits": 5000` in config to limit initial indexing
+- Disable `"includeFileChunks": false` to skip per-file diffs (fastest)
+- Incremental re-indexes are fast after initial index
 
 **Slow indexing**
 - Large repos take time on first index. Subsequent incremental indexes are fast.

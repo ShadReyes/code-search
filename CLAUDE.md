@@ -20,28 +20,54 @@ Local semantic code search CLI. Tree-sitter parsing → Ollama embeddings → La
 ## Module Map
 | File | Purpose |
 |------|---------|
-| `src/types.ts` | Core interfaces + default config |
+| `src/types.ts` | Core interfaces + default config (code + git) |
 | `src/parser.ts` | Tree-sitter init + parse (singleton) |
 | `src/chunker.ts` | AST → CodeChunk[] with NextJS rules |
-| `src/embedder.ts` | Ollama embed API client |
-| `src/store.ts` | LanceDB CRUD wrapper |
-| `src/indexer.ts` | Full/incremental index orchestration |
-| `src/search.ts` | Query embed + vector search |
-| `src/index.ts` | CLI entry point |
+| `src/embedder.ts` | Ollama embed API client (prefix support for git) |
+| `src/store.ts` | LanceDB CRUD wrapper (chunks + git_history tables) |
+| `src/indexer.ts` | Full/incremental code index orchestration |
+| `src/search.ts` | Code query embed + vector search |
+| `src/index.ts` | CLI entry point (code + git commands) |
+| `src/git/extractor.ts` | Git command wrappers (log, blame, pickaxe, diff) |
+| `src/git/chunker.ts` | Commit → embeddable chunks (3 levels) |
+| `src/git/enricher.ts` | Low-quality message enrichment (no LLM) |
+| `src/git/indexer.ts` | Git history index pipeline |
+| `src/git/search.ts` | Hybrid query router (5 strategies) |
+| `src/git/cross-ref.ts` | Code ↔ git cross-referencing + explain |
 
 ## Running
 ```bash
+# Code search
 npx tsx src/index.ts index --full --repo <path>
 npx tsx src/index.ts query "<search>" --repo <path>
 npx tsx src/index.ts stats --repo <path>
+
+# Git history search
+npx tsx src/index.ts git-index --full --repo <path>
+npx tsx src/index.ts git-search "<search>" --repo <path>
+npx tsx src/index.ts git-blame <file> <start> <end> --repo <path>
+npx tsx src/index.ts git-pickaxe "<string>" --repo <path>
+npx tsx src/index.ts git-stats --repo <path>
+npx tsx src/index.ts explain "<search>" --repo <path>
 ```
 
+## When to Use Git vs Code Search
+- **`query`** — find code by what it does ("authentication middleware", "database model")
+- **`git-search`** — find commits by why/when ("why did we switch providers", "auth changes last month")
+- **`explain`** — combined view: code context + git history for a symbol or concept
+- **`git-blame`** — line-level: who wrote specific lines
+- **`git-pickaxe`** — when was a specific string introduced/removed
+
 ## Data Locations
-- `.lance/` — LanceDB storage (gitignored)
-- `.code-search-state.json` — index state (gitignored)
+- `.lance/` — LanceDB storage, `chunks` + `git_history` tables (gitignored)
+- `.code-search-state.json` — code index state (gitignored)
+- `.git-search-state.json` — git index state (gitignored)
 
 ## Common Pitfalls
 - Always call `initParser()` before `parseFile()` — it's async and loads WASM
 - Always call `initStore()` before any store operations
+- Call `initGitHistoryTable()` after `initStore()` for git operations
 - Ollama must be running (`ollama serve`) before index/search
 - Embedding batch size of 50 balances throughput and memory
+- Git embedder uses `search_document:` prefix at index, `search_query:` at query (nomic-embed-text optimization)
+- Git extractor streams commits — never loads all into memory
