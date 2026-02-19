@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { dirname } from 'node:path';
 import type { GitCommitRaw, GitHistoryChunk, GitConfig } from '../types.js';
-import { getFileDiff } from './extractor.js';
+import { getCommitDiffs, getFileDiff } from './extractor.js';
 
 const CONVENTIONAL_RE = /^(feat|fix|refactor|docs|style|test|chore|perf|ci|build|revert)(\(([^)]+)\))?!?:\s/;
 const MERGE_BRANCH_RE = /from\s+(\S+)/i;
@@ -115,10 +115,25 @@ export async function chunkCommit(
     branch,
   });
 
-  // 2. file_diff (if enabled)
+  // 2. file_diff (if enabled) — batch diffs in one git call, parallel fallback
   if (config.includeFileChunks) {
+    let diffMap = await getCommitDiffs(repoPath, commit.sha, config.maxDiffLinesPerFile);
+
+    // Fallback: if batch approach returned nothing, fetch per-file in parallel (concurrency 5)
+    if (diffMap.size === 0 && commit.files.length > 0) {
+      diffMap = new Map();
+      const CONCURRENCY = 5;
+      for (let i = 0; i < commit.files.length; i += CONCURRENCY) {
+        const batch = commit.files.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(
+          batch.map(f => getFileDiff(repoPath, commit.sha, f.path, config.maxDiffLinesPerFile)),
+        );
+        batch.forEach((f, idx) => { diffMap.set(f.path, results[idx]); });
+      }
+    }
+
     for (const file of commit.files) {
-      const diff = await getFileDiff(repoPath, commit.sha, file.path, config.maxDiffLinesPerFile);
+      const diff = diffMap.get(file.path) ?? '';
       const text = diff
         ? `search_document: Diff for ${file.path} in commit ${commit.sha.slice(0, 8)} by ${commit.author}:\n${diff}`
         : `search_document: ${file.path} changed (+${file.additions}/-${file.deletions}) in commit ${commit.sha.slice(0, 8)} by ${commit.author}`;

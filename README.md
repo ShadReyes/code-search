@@ -152,7 +152,7 @@ Semantic search over git commit history. Indexes commits into a separate LanceDB
 
 - **commit_summary** — natural language description of each commit (always generated)
 - **file_diff** — per-file diff content for each changed file (configurable)
-- **merge_group** — aggregated merge commit summaries (configurable)
+- ~~**merge_group**~~ — removed; merge commits are now skipped entirely during indexing
 
 ### Git Commands
 
@@ -207,8 +207,7 @@ Add to `.code-searchrc.json`:
 {
   "git": {
     "includeFileChunks": true,
-    "includeMergeGroups": true,
-    "maxDiffLinesPerFile": 200,
+    "maxDiffLinesPerFile": 50,
     "enrichLowQualityMessages": true,
     "lowQualityThreshold": 10,
     "skipBotAuthors": ["dependabot", "renovate", "github-actions"],
@@ -220,8 +219,9 @@ Add to `.code-searchrc.json`:
 
 ### Scaling Notes
 
+- Merge commits are skipped — child commits already cover the same diffs, avoiding massive chunk bloat
 - Streams commits via async generators — memory stays flat regardless of repo size
-- Batch embedding (50 chunks) with progressive flush to LanceDB
+- Batch embedding (20 chunks for git, 50 for code) with progressive flush to LanceDB
 - Incremental indexing only processes commits since last index
 - `maxCommits` can limit initial indexing for very large repos
 

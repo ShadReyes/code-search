@@ -44,6 +44,11 @@ function shouldSkipCommit(commit: GitCommitRaw, config: GitConfig): boolean {
     return true;
   }
 
+  // Skip merge commits — child commits already cover the same diffs
+  if (commit.parents.length > 1) {
+    return true;
+  }
+
   // Skip if ALL files are lock files (and there is at least one file)
   if (commit.files.length > 0 && commit.files.every(f => isLockFile(f.path))) {
     return true;
@@ -206,6 +211,52 @@ export async function* extractCommitsSince(
   ];
 
   yield* streamCommits(repoPath, args, config);
+}
+
+export async function getCommitDiffs(
+  repoPath: string,
+  sha: string,
+  maxLinesPerFile: number = 50,
+): Promise<Map<string, string>> {
+  const diffs = new Map<string, string>();
+  try {
+    const output = execSync(
+      `git show --format="" --patch ${sha}`,
+      { cwd: repoPath, ...EXEC_OPTS, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 10 * 1024 * 1024 },
+    );
+
+    // Split on "diff --git a/" headers
+    const parts = output.split(/^diff --git a\//m);
+
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      // First line: "path/to/file b/path/to/file\n..."
+      const newlineIdx = part.indexOf('\n');
+      if (newlineIdx === -1) continue;
+
+      const header = part.slice(0, newlineIdx);
+      // Extract file path from "path b/path" — use the b/ side
+      const bIdx = header.indexOf(' b/');
+      const filePath = bIdx !== -1 ? header.slice(bIdx + 3) : header.split(' ')[0];
+
+      const diffBody = 'diff --git a/' + part;
+
+      if (diffBody.includes('Binary files')) {
+        diffs.set(filePath, '[binary file]');
+        continue;
+      }
+
+      const lines = diffBody.split('\n');
+      if (lines.length > maxLinesPerFile) {
+        diffs.set(filePath, lines.slice(0, maxLinesPerFile).join('\n') + `\n... truncated (${lines.length - maxLinesPerFile} more lines)`);
+      } else {
+        diffs.set(filePath, diffBody);
+      }
+    }
+  } catch {
+    // Return empty map — caller should fall back to per-file extraction
+  }
+  return diffs;
 }
 
 export async function getFileDiff(

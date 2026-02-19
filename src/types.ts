@@ -150,7 +150,7 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
   git: {
     includeFileChunks: true,
     includeMergeGroups: true,
-    maxDiffLinesPerFile: 200,
+    maxDiffLinesPerFile: 50,
     enrichLowQualityMessages: true,
     lowQualityThreshold: 10,
     skipBotAuthors: ['dependabot', 'renovate', 'github-actions'],

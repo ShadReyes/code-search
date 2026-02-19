@@ -68,6 +68,6 @@ npx tsx src/index.ts explain "<search>" --repo <path>
 - Always call `initStore()` before any store operations
 - Call `initGitHistoryTable()` after `initStore()` for git operations
 - Ollama must be running (`ollama serve`) before index/search
-- Embedding batch size of 50 balances throughput and memory
+- Embedding batch size of 50 for code, 20 for git (git diff chunks are larger)
 - Git embedder uses `search_document:` prefix at index, `search_query:` at query (nomic-embed-text optimization)
 - Git extractor streams commits — never loads all into memory
