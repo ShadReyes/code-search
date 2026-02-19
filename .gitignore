@@ -2,6 +2,7 @@ node_modules/
 dist/
 .lance/
 .code-search-state.json
+.git-search-state.json
 *.tsbuildinfo
 
 # OS
