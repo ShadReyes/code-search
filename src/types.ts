@@ -60,7 +60,7 @@ export interface GitHistoryChunk {
 export interface GitHistorySearchResult {
   chunk: GitHistoryChunk;
   score: number;
-  retrieval_method: 'vector' | 'temporal_vector' | 'pickaxe' | 'blame' | 'structured_git';
+  retrieval_method: 'vector';
 }
 
 export interface GitIndexState {
@@ -69,24 +69,6 @@ export interface GitIndexState {
   totalChunks: number;
   totalCommits: number;
   embeddingDimension: number;
-}
-
-export interface BlameResult {
-  sha: string;
-  author: string;
-  email: string;
-  date: string;
-  lineStart: number;
-  lineEnd: number;
-  content: string;
-}
-
-export interface GitLogResult {
-  sha: string;
-  author: string;
-  date: string;
-  subject: string;
-  files: string[];
 }
 
 export interface GitConfig {

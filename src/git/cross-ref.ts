@@ -3,7 +3,6 @@ import type { CodeSearchConfig, GitHistorySearchResult, SearchResult } from '../
 import { initStore, initGitHistoryTable, searchGitHistory } from '../store.js';
 import { searchCode } from '../search.js';
 import { embedSingle } from '../embedder.js';
-import { pickaxeSearch } from './extractor.js';
 
 async function ensureStores(): Promise<void> {
   await initStore();
@@ -21,60 +20,6 @@ export async function getHistoryForFile(
   const escapedPath = filePath.replace(/'/g, "''");
   const vector = await embedSingle(filePath, config.embeddingModel, 'search_query: ');
   return searchGitHistory(vector, limit, `file_path = '${escapedPath}'`);
-}
-
-export async function getHistoryForSymbol(
-  symbolName: string,
-  repoPath: string,
-  config: CodeSearchConfig,
-  limit: number = 10,
-): Promise<GitHistorySearchResult[]> {
-  await ensureStores();
-
-  const pickaxeResults = await pickaxeSearch(repoPath, symbolName, limit);
-  if (pickaxeResults.length === 0) return [];
-
-  const results: GitHistorySearchResult[] = [];
-  const seenShas = new Set<string>();
-
-  for (const log of pickaxeResults) {
-    if (seenShas.has(log.sha)) continue;
-    seenShas.add(log.sha);
-
-    const vector = await embedSingle(symbolName, config.embeddingModel, 'search_query: ');
-    const found = await searchGitHistory(vector, 3, `sha = '${log.sha.replace(/'/g, "''")}'`);
-
-    if (found.length > 0) {
-      results.push(...found);
-    } else {
-      results.push({
-        chunk: {
-          id: `pickaxe-${log.sha}`,
-          sha: log.sha,
-          author: log.author,
-          email: '',
-          date: log.date,
-          subject: log.subject,
-          body: '',
-          chunk_type: 'commit_summary',
-          commit_type: '',
-          scope: '',
-          file_path: '',
-          text: `${log.subject}\nFiles: ${log.files.join(', ')}`,
-          files_changed: log.files.length,
-          additions: 0,
-          deletions: 0,
-          branch: '',
-        },
-        score: 0,
-        retrieval_method: 'pickaxe',
-      });
-    }
-
-    if (results.length >= limit) break;
-  }
-
-  return results;
 }
 
 export async function explain(

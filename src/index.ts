@@ -10,7 +10,6 @@ import { initStore, getStats, getGitStats, initGitHistoryTable } from './store.j
 import { DEFAULT_CONFIG } from './types.js';
 import { indexGitFull, indexGitIncremental } from './git/indexer.js';
 import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
-import { gitBlame, pickaxeSearch } from './git/extractor.js';
 import { explain } from './git/cross-ref.js';
 
 const program = new Command();
@@ -213,62 +212,6 @@ program
           `  code-search git-index --full --repo ${repoRoot}`
         ));
       }
-      process.exit(1);
-    }
-  });
-
-program
-  .command('git-blame <file> <start> <end>')
-  .description('Show line-level git blame')
-  .option('--repo <path>', 'Path to the repository root')
-  .action(async (file, start, end, opts) => {
-    const repoRoot = resolveRepo(opts.repo);
-    try {
-      const results = await gitBlame(repoRoot, file, parseInt(start), parseInt(end));
-      if (results.length === 0) {
-        console.log(chalk.yellow('No blame results found.'));
-        return;
-      }
-      console.log(chalk.bold(`Blame for ${file}:${start}-${end}`));
-      console.log('');
-      for (const r of results) {
-        console.log(
-          `${chalk.yellow(r.sha.slice(0, 7))} ${chalk.dim(r.date.slice(0, 10))} ${chalk.green(r.author.padEnd(20))} ${chalk.dim(`L${r.lineStart}`)} ${r.content}`,
-        );
-      }
-    } catch (err) {
-      console.error(chalk.red(`\nBlame failed:\n${formatError(err)}`));
-      process.exit(1);
-    }
-  });
-
-program
-  .command('git-pickaxe <search>')
-  .description('Find when a string was introduced or removed')
-  .option('--repo <path>', 'Path to the repository root')
-  .option('--limit <n>', 'Maximum number of results', parseInt)
-  .action(async (search, opts) => {
-    const repoRoot = resolveRepo(opts.repo);
-    try {
-      const results = await pickaxeSearch(repoRoot, search, opts.limit || 20);
-      if (results.length === 0) {
-        console.log(chalk.yellow(`No commits found introducing/removing "${search}"`));
-        return;
-      }
-      console.log(chalk.bold(`Commits introducing/removing "${search}":`));
-      console.log('');
-      for (const r of results) {
-        console.log(
-          `${chalk.yellow(r.sha.slice(0, 7))} ${chalk.dim(r.date.slice(0, 10))} ${chalk.green(r.author)}`,
-        );
-        console.log(`  ${r.subject}`);
-        if (r.files.length > 0) {
-          console.log(`  ${chalk.dim(`Files: ${r.files.join(', ')}`)}`);
-        }
-        console.log('');
-      }
-    } catch (err) {
-      console.error(chalk.red(`\nPickaxe search failed:\n${formatError(err)}`));
       process.exit(1);
     }
   });

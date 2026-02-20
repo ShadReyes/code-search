@@ -28,11 +28,11 @@ Local semantic code search CLI. Tree-sitter parsing → Ollama embeddings → La
 | `src/indexer.ts` | Full/incremental code index orchestration |
 | `src/search.ts` | Code query embed + vector search |
 | `src/index.ts` | CLI entry point (code + git commands) |
-| `src/git/extractor.ts` | Git command wrappers (log, blame, pickaxe, diff) |
+| `src/git/extractor.ts` | Git commit streaming for indexer |
 | `src/git/chunker.ts` | Commit → embeddable chunks (3 levels) |
 | `src/git/enricher.ts` | Low-quality message enrichment (no LLM) |
 | `src/git/indexer.ts` | Git history index pipeline |
-| `src/git/search.ts` | Hybrid query router (5 strategies) |
+| `src/git/search.ts` | Semantic vector search with metadata filters |
 | `src/git/cross-ref.ts` | Code ↔ git cross-referencing + explain |
 
 ## Running
@@ -45,8 +45,6 @@ npx tsx src/index.ts stats --repo <path>
 # Git history search
 npx tsx src/index.ts git-index --full --repo <path>
 npx tsx src/index.ts git-search "<search>" --repo <path>
-npx tsx src/index.ts git-blame <file> <start> <end> --repo <path>
-npx tsx src/index.ts git-pickaxe "<string>" --repo <path>
 npx tsx src/index.ts git-stats --repo <path>
 npx tsx src/index.ts explain "<search>" --repo <path>
 ```
@@ -55,8 +53,6 @@ npx tsx src/index.ts explain "<search>" --repo <path>
 - **`query`** — find code by what it does ("authentication middleware", "database model")
 - **`git-search`** — find commits by why/when ("why did we switch providers", "auth changes last month")
 - **`explain`** — combined view: code context + git history for a symbol or concept
-- **`git-blame`** — line-level: who wrote specific lines
-- **`git-pickaxe`** — when was a specific string introduced/removed
 
 ## Data Locations
 - `.lance/` — LanceDB storage, `chunks` + `git_history` tables (gitignored)
