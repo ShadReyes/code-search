@@ -163,9 +163,13 @@ program
   .action(async (opts) => {
     const repoRoot = resolveRepo(opts.repo);
     try {
-      const config = loadConfig(repoRoot, opts.verbose);
+      const config = loadConfig(repoRoot, false);
       if (opts.maxCommits !== undefined) {
         config.git!.maxCommits = opts.maxCommits;
+      }
+      if (opts.verbose) {
+        console.log(chalk.dim('Effective config:'));
+        console.log(chalk.dim(JSON.stringify(config, null, 2)));
       }
       if (opts.full) {
         await indexGitFull(repoRoot, config, opts.verbose);
