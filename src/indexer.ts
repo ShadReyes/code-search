@@ -17,11 +17,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOOL_ROOT = dirname(__dirname);
 
 function getStatePath(): string {
-  return join(TOOL_ROOT, '.code-search-state.json');
+  return join(TOOL_ROOT, '.cortex-recall-state.json');
 }
 
 export function loadConfig(repoRoot: string, verbose: boolean = false): CodeSearchConfig {
-  const configPath = join(repoRoot, '.code-searchrc.json');
+  const configPath = join(repoRoot, '.cortexrc.json');
   let userConfig: Partial<CodeSearchConfig> = {};
 
   if (existsSync(configPath)) {

@@ -1,6 +1,6 @@
-# code-search
+# cortex-recall
 
-Local semantic code search CLI for NextJS monorepos. Primary consumer: Claude Code.
+Local semantic code search and RAG CLI for NextJS monorepos. Primary consumer: Claude Code.
 
 Uses tree-sitter AST parsing, nomic-embed-text embeddings (via Ollama), and LanceDB vector storage.
 
@@ -15,14 +15,14 @@ ollama pull nomic-embed-text
 ## Installation
 
 ```bash
-git clone https://github.com/ShadReyes/code-search.git
-cd code-search
+git clone https://github.com/ShadReyes/cortex-recall.git
+cd cortex-recall
 npm install
 ```
 
 ## CLI Reference
 
-All commands accept `--repo <path>` or use the `CODE_SEARCH_REPO` env var.
+All commands accept `--repo <path>` or use the `CORTEX_RECALL_REPO` env var.
 
 ### Index
 
@@ -59,13 +59,13 @@ npx tsx src/index.ts stats --repo /path/to/monorepo
 ### Init Config
 
 ```bash
-# Generate .code-searchrc.json with defaults
+# Generate .cortexrc.json with defaults
 npx tsx src/index.ts init --repo /path/to/monorepo
 ```
 
 ## Configuration
 
-Create `.code-searchrc.json` at the repo root (or use `code-search init`):
+Create `.cortexrc.json` at the repo root (or use `cortex-recall init`):
 
 ```json
 {
@@ -140,9 +140,9 @@ src/
 
 ### Storage
 
-- LanceDB at `code-search/.lance/`
+- LanceDB at `cortex-recall/.lance/`
 - Cosine distance for similarity
-- State tracked in `code-search/.code-search-state.json`
+- State tracked in `cortex-recall/.cortex-recall-state.json`
 
 ## Git History Search
 
@@ -183,7 +183,7 @@ Bridges code search and git history. For each code match, it finds related commi
 
 ### Git Config Options
 
-Add to `.code-searchrc.json`:
+Add to `.cortexrc.json`:
 
 ```json
 {
@@ -214,17 +214,17 @@ Add to your monorepo's `CLAUDE.md`:
 ```markdown
 ## Semantic Code Search
 
-Search the codebase semantically using the code-search CLI:
-  npx tsx ~/code-search/src/index.ts query "<search>" --repo .
-  npx tsx ~/code-search/src/index.ts index --repo .
-  npx tsx ~/code-search/src/index.ts git-search "<search>" --repo .
-  npx tsx ~/code-search/src/index.ts explain "<search>" --repo .
+Search the codebase semantically using the cortex-recall CLI:
+  npx tsx ~/cortex-recall/src/index.ts query "<search>" --repo .
+  npx tsx ~/cortex-recall/src/index.ts index --repo .
+  npx tsx ~/cortex-recall/src/index.ts git-search "<search>" --repo .
+  npx tsx ~/cortex-recall/src/index.ts explain "<search>" --repo .
 
-Use `code-search query` before exploring unfamiliar parts of the codebase.
-Use `code-search git-search` to understand why code was changed.
-Use `code-search explain` for combined code + history context.
-Run `code-search index` after significant changes to keep the index fresh.
-Run `code-search git-index` after pulling to index new commits.
+Use `cortex-recall query` before exploring unfamiliar parts of the codebase.
+Use `cortex-recall git-search` to understand why code was changed.
+Use `cortex-recall explain` for combined code + history context.
+Run `cortex-recall index` after significant changes to keep the index fresh.
+Run `cortex-recall git-index` after pulling to index new commits.
 ```
 
 ## Troubleshooting

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CodeChunk, SearchResult, GitHistoryChunk, GitHistorySearchResult } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TOOL_ROOT = dirname(__dirname); // code-search repo root
+const TOOL_ROOT = dirname(__dirname); // cortex-recall repo root
 const TABLE_NAME = 'chunks';
 const GIT_TABLE_NAME = 'git_history';
 

@@ -1,20 +1,20 @@
 {
-  "name": "code-search",
+  "name": "cortex-recall",
   "version": "0.1.0",
-  "description": "Local semantic code search CLI for NextJS monorepos",
+  "description": "Local semantic code search and RAG CLI for NextJS monorepos",
   "type": "module",
   "license": "MIT",
   "author": "ShadReyes",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ShadReyes/code-search.git"
+    "url": "https://github.com/ShadReyes/cortex-recall.git"
   },
-  "homepage": "https://github.com/ShadReyes/code-search",
+  "homepage": "https://github.com/ShadReyes/cortex-recall",
   "bugs": {
-    "url": "https://github.com/ShadReyes/code-search/issues"
+    "url": "https://github.com/ShadReyes/cortex-recall/issues"
   },
   "keywords": [
-    "code-search",
+    "cortex-recall",
     "semantic-search",
     "tree-sitter",
     "ollama",
@@ -25,7 +25,7 @@
     "node": ">=22.0.0"
   },
   "bin": {
-    "code-search": "./dist/index.js"
+    "cortex-recall": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",

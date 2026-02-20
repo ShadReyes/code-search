@@ -19,7 +19,7 @@ describe('loadConfig', () => {
 
     configuredDir = mkdtempSync(join(tmpdir(), 'bench-cfg-custom-'));
     writeFileSync(
-      join(configuredDir, '.code-searchrc.json'),
+      join(configuredDir, '.cortexrc.json'),
       JSON.stringify({
         include: ['src/**/*.ts', 'src/**/*.tsx'],
         exclude: ['node_modules/**', 'dist/**', 'coverage/**'],
@@ -36,11 +36,11 @@ describe('loadConfig', () => {
     rmSync(configuredDir, { recursive: true, force: true });
   });
 
-  bench('loadConfig without .code-searchrc.json', () => {
+  bench('loadConfig without .cortexrc.json', () => {
     loadConfig(bareDir);
   });
 
-  bench('loadConfig with .code-searchrc.json', () => {
+  bench('loadConfig with .cortexrc.json', () => {
     loadConfig(configuredDir);
   });
 });

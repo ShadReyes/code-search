@@ -103,15 +103,15 @@ export async function explain(
     lines.push(chalk.yellow(`No results found for "${query}"`));
     lines.push('');
     if (!hasCodeResults) {
-      lines.push(chalk.dim('Tip: Run "code-search index --full --repo <path>" to build the code index.'));
+      lines.push(chalk.dim('Tip: Run "cortex-recall index --full --repo <path>" to build the code index.'));
     }
     if (!hasGitResults) {
-      lines.push(chalk.dim('Tip: Run "code-search git-index --full --repo <path>" to build the git history index.'));
+      lines.push(chalk.dim('Tip: Run "cortex-recall git-index --full --repo <path>" to build the git history index.'));
     }
   } else if (!hasCodeResults) {
-    lines.push(chalk.dim('Note: No code index found. Run "code-search index --full --repo <path>" for combined results.'));
+    lines.push(chalk.dim('Note: No code index found. Run "cortex-recall index --full --repo <path>" for combined results.'));
   } else if (!hasGitResults) {
-    lines.push(chalk.dim('Note: No git index found. Run "code-search git-index --full --repo <path>" for combined results.'));
+    lines.push(chalk.dim('Note: No git index found. Run "cortex-recall git-index --full --repo <path>" for combined results.'));
   }
 
   return lines.join('\n');

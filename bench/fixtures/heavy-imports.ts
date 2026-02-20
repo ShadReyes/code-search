@@ -127,7 +127,7 @@ export function generateToken(
 ): string {
   return sign(payload, secret, {
     expiresIn,
-    issuer: 'code-search-bench',
+    issuer: 'cortex-recall-bench',
     jwtid: uuidv4(),
   });
 }

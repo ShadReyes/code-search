@@ -15,13 +15,13 @@ import { explain } from './git/cross-ref.js';
 const program = new Command();
 
 function resolveRepo(repo?: string): string {
-  const raw = repo || process.env.CODE_SEARCH_REPO;
+  const raw = repo || process.env.CORTEX_RECALL_REPO;
   if (!raw) {
     console.error(chalk.red(
       'Error: Repository path is required.\n\n' +
       'Provide it via:\n' +
       '  --repo /path/to/your/repo\n' +
-      '  CODE_SEARCH_REPO=/path/to/your/repo (env var)'
+      '  CORTEX_RECALL_REPO=/path/to/your/repo (env var)'
     ));
     process.exit(1);
   }
@@ -53,7 +53,7 @@ function formatError(err: unknown): string {
 }
 
 program
-  .name('code-search')
+  .name('cortex-recall')
   .description('Local semantic code search CLI for NextJS monorepos')
   .version('0.1.0');
 
@@ -119,7 +119,7 @@ program
       console.log(`  Unique files: ${chalk.white(stats.uniqueFiles.toString())}`);
 
       if (stats.totalChunks === 0) {
-        console.log(chalk.dim('\nNo data indexed yet. Run: code-search index --full --repo <path>'));
+        console.log(chalk.dim('\nNo data indexed yet. Run: cortex-recall index --full --repo <path>'));
       }
     } catch (err) {
       console.error(chalk.red(`\nStats failed:\n${formatError(err)}`));
@@ -129,11 +129,11 @@ program
 
 program
   .command('init')
-  .description('Generate a .code-searchrc.json config file with defaults')
+  .description('Generate a .cortexrc.json config file with defaults')
   .option('--repo <path>', 'Path to the repository root')
   .action((opts) => {
     const repoRoot = resolveRepo(opts.repo);
-    const configPath = join(repoRoot, '.code-searchrc.json');
+    const configPath = join(repoRoot, '.cortexrc.json');
 
     if (existsSync(configPath)) {
       console.log(chalk.yellow(`Config already exists at ${configPath}`));
@@ -142,7 +142,7 @@ program
     }
 
     const configWithComments = {
-      _comment: 'Configuration for code-search CLI. See README.md for details.',
+      _comment: 'Configuration for cortex-recall CLI. See README.md for details.',
       ...DEFAULT_CONFIG,
     };
 
@@ -209,7 +209,7 @@ program
       if (msg.includes('table') || msg.includes('not found')) {
         console.error(chalk.dim(
           '\nTip: You need to index git history first:\n' +
-          `  code-search git-index --full --repo ${repoRoot}`
+          `  cortex-recall git-index --full --repo ${repoRoot}`
         ));
       }
       process.exit(1);
@@ -233,7 +233,7 @@ program
         console.log(`  Date range:     ${chalk.white(`${stats.dateRange.earliest.slice(0, 10)} to ${stats.dateRange.latest.slice(0, 10)}`)}`);
       }
       if (stats.totalChunks === 0) {
-        console.log(chalk.dim('\nNo git history indexed yet. Run: code-search git-index --full --repo <path>'));
+        console.log(chalk.dim('\nNo git history indexed yet. Run: cortex-recall git-index --full --repo <path>'));
       }
     } catch (err) {
       console.error(chalk.red(`\nGit stats failed:\n${formatError(err)}`));

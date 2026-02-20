@@ -1,4 +1,4 @@
-# code-search Development Guide
+# cortex-recall Development Guide
 
 ## Project Overview
 Local semantic code search CLI. Tree-sitter parsing → Ollama embeddings → LanceDB vector store.
@@ -56,7 +56,7 @@ npx tsx src/index.ts explain "<search>" --repo <path>
 
 ## Data Locations
 - `.lance/` — LanceDB storage, `chunks` + `git_history` tables (gitignored)
-- `.code-search-state.json` — code index state (gitignored)
+- `.cortex-recall-state.json` — code index state (gitignored)
 - `.git-search-state.json` — git index state (gitignored)
 
 ## Common Pitfalls

@@ -42,7 +42,7 @@ describe('loadConfig', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('no .code-searchrc.json → returns defaults', () => {
+  it('no .cortexrc.json → returns defaults', () => {
     const config = loadConfig(tmpDir);
     expect(config.include).toEqual(DEFAULT_CONFIG.include);
     expect(config.exclude).toEqual(DEFAULT_CONFIG.exclude);
@@ -50,9 +50,9 @@ describe('loadConfig', () => {
     expect(config.embeddingModel).toBe('nomic-embed-text');
   });
 
-  it('with .code-searchrc.json → merges overrides', () => {
+  it('with .cortexrc.json → merges overrides', () => {
     writeFileSync(
-      join(tmpDir, '.code-searchrc.json'),
+      join(tmpDir, '.cortexrc.json'),
       JSON.stringify({ maxFileLines: 500, embeddingModel: 'custom-model' }),
     );
     const config = loadConfig(tmpDir);
@@ -64,7 +64,7 @@ describe('loadConfig', () => {
 
   it('excludePatterns is additive', () => {
     writeFileSync(
-      join(tmpDir, '.code-searchrc.json'),
+      join(tmpDir, '.cortexrc.json'),
       JSON.stringify({ excludePatterns: ['*.generated.ts'] }),
     );
     const config = loadConfig(tmpDir);

@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .lance/
-.code-search-state.json
+.cortex-recall-state.json
 .git-search-state.json
 *.tsbuildinfo
 
