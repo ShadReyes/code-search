@@ -11,12 +11,14 @@ import { DEFAULT_CONFIG } from './types.js';
 import { registry } from './lang/plugin.js';
 import { TypeScriptPlugin } from './lang/typescript/index.js';
 import { PythonPlugin } from './lang/python/index.js';
+import { RubyPlugin } from './lang/ruby/index.js';
 import { indexGitFull, indexGitIncremental } from './git/indexer.js';
 import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
 import { explain, formatExplainResult } from './git/cross-ref.js';
 
 registry.register(new TypeScriptPlugin());
 registry.register(new PythonPlugin());
+registry.register(new RubyPlugin());
 
 const program = new Command();
 
