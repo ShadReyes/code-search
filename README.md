@@ -1,8 +1,16 @@
 # cortex-recall
 
-Local semantic code search and RAG CLI for NextJS monorepos. Primary consumer: Claude Code.
+Local semantic code search and RAG CLI. Primary consumer: Claude Code.
 
 Uses tree-sitter AST parsing, nomic-embed-text embeddings (via Ollama), and LanceDB vector storage.
+
+### Supported Languages
+
+**Code indexing** (`index`, `query`) parses source files with tree-sitter and only supports JavaScript/TypeScript:
+- `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.mts`
+- Chunking heuristics are React/NextJS-aware (components, hooks, route handlers, pages, layouts)
+
+**Git history search** (`git-index`, `git-search`, `explain`) indexes commit messages and diffs — works on any repo regardless of language.
 
 ## Prerequisites
 
