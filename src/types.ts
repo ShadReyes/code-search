@@ -97,9 +97,13 @@ export interface CodeSearchConfig {
   maxFileLines: number;
   indexTests: boolean;
   chunkMaxTokens: number;
+  embeddingProvider?: 'ollama' | 'openai';
   embeddingModel: string;
+  embeddingApiKey?: string;
+  embeddingBaseUrl?: string;
   embeddingBatchSize: number;
   searchLimit: number;
+  storeUri?: string;
   git?: GitConfig;
 }
 
@@ -127,6 +131,7 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
   maxFileLines: 2000,
   indexTests: false,
   chunkMaxTokens: 8000,
+  embeddingProvider: 'ollama',
   embeddingModel: 'nomic-embed-text',
   embeddingBatchSize: 50,
   searchLimit: 5,

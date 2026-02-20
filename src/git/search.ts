@@ -1,13 +1,13 @@
 import chalk from 'chalk';
 import type { GitHistorySearchResult, CodeSearchConfig } from '../types.js';
 import { initStore, initGitHistoryTable, searchGitHistory } from '../store.js';
-import { embedSingle } from '../embedder.js';
+import { createProvider } from '../embeddings/provider.js';
 
 let storeReady = false;
 
-async function ensureStore(): Promise<void> {
+async function ensureStore(storeUri?: string): Promise<void> {
   if (storeReady) return;
-  await initStore();
+  await initStore(storeUri);
   await initGitHistoryTable();
   storeReady = true;
 }
@@ -26,10 +26,11 @@ export async function searchGitHistoryQuery(
   config: CodeSearchConfig,
   options?: SearchOptions,
 ): Promise<GitHistorySearchResult[]> {
-  await ensureStore();
+  await ensureStore(config.storeUri);
 
   const limit = options?.limit ?? config.searchLimit ?? 10;
-  const vector = await embedSingle(query, config.embeddingModel, 'search_query: ');
+  const provider = createProvider(config);
+  const vector = await provider.embedSingle(query, 'search_query: ');
   const filter = buildWhereFilters(options);
   const results = await searchGitHistory(vector, limit, filter || undefined);
 

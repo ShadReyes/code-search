@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { embedSingle } from './embedder.js';
+import { createProvider } from './embeddings/provider.js';
 import { initStore, search as vectorSearch } from './store.js';
 import { loadConfig } from './indexer.js';
 import type { SearchResult } from './types.js';
@@ -14,11 +14,12 @@ export async function searchCode(
   const config = loadConfig(repoRoot, verbose);
   const effectiveLimit = limit || config.searchLimit;
 
-  await initStore();
+  await initStore(config.storeUri);
 
   // Embed query
   if (verbose) console.log(chalk.dim(`Embedding query: "${query}"`));
-  const queryVector = await embedSingle(query, config.embeddingModel);
+  const provider = createProvider(config);
+  const queryVector = await provider.embedSingle(query);
 
   // Search
   const results = await vectorSearch(queryVector, effectiveLimit, fileFilter);

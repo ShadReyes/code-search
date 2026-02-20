@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import chalk from 'chalk';
-import { checkOllamaHealth, embedBatch, probeEmbeddingDimension } from '../embedder.js';
+import { createProvider, type EmbeddingProvider } from '../embeddings/provider.js';
 import { initStore, initGitHistoryTable, insertGitChunks, dropGitTable } from '../store.js';
 import { extractAllCommits, extractCommitsSince, validateGitRepo } from './extractor.js';
 import { chunkCommit } from './chunker.js';
@@ -12,6 +12,7 @@ import type { CodeSearchConfig, GitHistoryChunk, GitIndexState } from '../types.
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOOL_ROOT = dirname(dirname(__dirname));
+
 
 function getGitStatePath(): string {
   return join(TOOL_ROOT, '.git-search-state.json');
@@ -33,14 +34,14 @@ function saveGitState(state: GitIndexState): void {
 
 async function processBatch(
   batch: GitHistoryChunk[],
-  model: string,
+  provider: EmbeddingProvider,
   batchSize: number,
   dimension: number,
   verbose: boolean,
   overwrite: boolean,
 ): Promise<void> {
   const texts = batch.map(c => c.text);
-  const vectors = await embedBatch(texts, model, batchSize, dimension, verbose, 'search_document: ');
+  const vectors = await provider.embedBatch(texts, { batchSize, dimension, verbose, prefix: 'search_document: ' });
   await insertGitChunks(batch, vectors, overwrite);
 }
 
@@ -55,13 +56,14 @@ export async function indexGitFull(
 
   console.log(chalk.blue('Starting full git history index...'));
 
-  // Health check
-  await checkOllamaHealth(config.embeddingModel);
-  const dimension = await probeEmbeddingDimension(config.embeddingModel);
+  // Initialize embedding provider
+  const provider = createProvider(config);
+  await provider.healthCheck();
+  const dimension = await provider.probeDimension();
   if (verbose) console.log(chalk.dim(`Embedding dimension: ${dimension}`));
 
   // Initialize store
-  await initStore();
+  await initStore(config.storeUri);
   await initGitHistoryTable();
   await dropGitTable();
 
@@ -83,7 +85,7 @@ export async function indexGitFull(
 
     // Flush batch every 20 chunks (git diff chunks are larger than code chunks)
     if (batch.length >= 20) {
-      await processBatch(batch, config.embeddingModel, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
+      await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
       chunkCount += batch.length;
       isFirstBatch = false;
       batch = [];
@@ -96,7 +98,7 @@ export async function indexGitFull(
 
   // Flush remaining
   if (batch.length > 0) {
-    await processBatch(batch, config.embeddingModel, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
+    await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
     chunkCount += batch.length;
   }
 
@@ -134,12 +136,13 @@ export async function indexGitIncremental(
 
   console.log(chalk.blue(`Starting incremental git index (since ${state.lastCommit.slice(0, 8)})...`));
 
-  // Health check
-  await checkOllamaHealth(config.embeddingModel);
+  // Initialize embedding provider
+  const provider = createProvider(config);
+  await provider.healthCheck();
   const dimension = state.embeddingDimension;
 
   // Initialize store
-  await initStore();
+  await initStore(config.storeUri);
   await initGitHistoryTable();
 
   // Stream new commits
@@ -156,7 +159,7 @@ export async function indexGitIncremental(
       batch.push(...enriched);
 
       if (batch.length >= 20) {
-        await processBatch(batch, config.embeddingModel, config.embeddingBatchSize, dimension, verbose, false);
+        await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, false);
         chunkCount += batch.length;
         batch = [];
 
@@ -172,7 +175,7 @@ export async function indexGitIncremental(
 
   // Flush remaining
   if (batch.length > 0) {
-    await processBatch(batch, config.embeddingModel, config.embeddingBatchSize, dimension, verbose, false);
+    await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, false);
     chunkCount += batch.length;
   }
 

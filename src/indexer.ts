@@ -6,7 +6,7 @@ import { minimatch } from 'minimatch';
 import merge from 'lodash.merge';
 import chalk from 'chalk';
 import { registry } from './lang/plugin.js';
-import { checkOllamaHealth, embedBatch, probeEmbeddingDimension } from './embedder.js';
+import { createProvider } from './embeddings/provider.js';
 import { initStore, insertChunks, deleteByFilePath, dropTable } from './store.js';
 import { DEFAULT_CONFIG, type CodeSearchConfig, type IndexState, type CodeChunk } from './types.js';
 import { dirname } from 'node:path';
@@ -121,19 +121,21 @@ function saveState(state: IndexState): void {
 export async function indexFull(
   repoRoot: string,
   verbose: boolean = false,
+  configOverride?: CodeSearchConfig,
 ): Promise<void> {
-  const config = loadConfig(repoRoot, verbose);
+  const config = configOverride ?? loadConfig(repoRoot, verbose);
 
   console.log(chalk.blue('Starting full index...'));
 
-  // Health check
-  await checkOllamaHealth(config.embeddingModel);
-  const dimension = await probeEmbeddingDimension(config.embeddingModel);
+  // Initialize embedding provider
+  const provider = createProvider(config);
+  await provider.healthCheck();
+  const dimension = await provider.probeDimension();
   if (verbose) console.log(chalk.dim(`Embedding dimension: ${dimension}`));
 
   // Initialize
   await registry.initAll();
-  await initStore();
+  await initStore(config.storeUri);
 
   // Discover files
   const files = discoverFiles(repoRoot, config);
@@ -168,7 +170,7 @@ export async function indexFull(
   // Embed in batches (embedBatch handles internal batching + fallback)
   const contents = allChunks.map(c => c.content);
   console.log(chalk.dim(`Embedding ${contents.length} chunks (batch size ${config.embeddingBatchSize})...`));
-  const vectors = await embedBatch(contents, config.embeddingModel, config.embeddingBatchSize, dimension, verbose);
+  const vectors = await provider.embedBatch(contents, { batchSize: config.embeddingBatchSize, dimension, verbose });
 
   // Insert (overwrite)
   await dropTable();
@@ -190,24 +192,26 @@ export async function indexFull(
 export async function indexIncremental(
   repoRoot: string,
   verbose: boolean = false,
+  configOverride?: CodeSearchConfig,
 ): Promise<void> {
   const state = loadState();
 
   if (!state) {
     console.log(chalk.yellow('No existing index state found. Running full index...'));
-    return indexFull(repoRoot, verbose);
+    return indexFull(repoRoot, verbose, configOverride);
   }
 
-  const config = loadConfig(repoRoot, verbose);
+  const config = configOverride ?? loadConfig(repoRoot, verbose);
 
   console.log(chalk.blue('Starting incremental index...'));
 
-  // Health check
-  await checkOllamaHealth(config.embeddingModel);
+  // Initialize embedding provider
+  const provider = createProvider(config);
+  await provider.healthCheck();
 
   // Initialize
   await registry.initAll();
-  await initStore();
+  await initStore(config.storeUri);
 
   // Get changed files
   let changedFiles: string[];
@@ -282,7 +286,7 @@ export async function indexIncremental(
   if (allChunks.length > 0) {
     // Embed new chunks
     const contents = allChunks.map(c => c.content);
-    const vectors = await embedBatch(contents, config.embeddingModel, config.embeddingBatchSize, 768, verbose);
+    const vectors = await provider.embedBatch(contents, { batchSize: config.embeddingBatchSize, dimension: state.embeddingDimension, verbose });
     await insertChunks(allChunks, vectors);
   }
 

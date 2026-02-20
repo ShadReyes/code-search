@@ -2,10 +2,19 @@ import chalk from 'chalk';
 import type { CodeSearchConfig, GitHistorySearchResult, SearchResult } from '../types.js';
 import { initStore, initGitHistoryTable, searchGitHistory } from '../store.js';
 import { searchCode } from '../search.js';
-import { embedSingle } from '../embedder.js';
+import { createProvider } from '../embeddings/provider.js';
 
-async function ensureStores(): Promise<void> {
-  await initStore();
+export interface ExplainCodeResult extends SearchResult {
+  fileHistory: GitHistorySearchResult[];
+}
+
+export interface ExplainResult {
+  codeResults: ExplainCodeResult[];
+  gitResults: GitHistorySearchResult[];
+}
+
+async function ensureStores(storeUri?: string): Promise<void> {
+  await initStore(storeUri);
   await initGitHistoryTable();
 }
 
@@ -15,10 +24,11 @@ export async function getHistoryForFile(
   config: CodeSearchConfig,
   limit: number = 10,
 ): Promise<GitHistorySearchResult[]> {
-  await ensureStores();
+  await ensureStores(config.storeUri);
 
   const escapedPath = filePath.replace(/'/g, "''");
-  const vector = await embedSingle(filePath, config.embeddingModel, 'search_query: ');
+  const provider = createProvider(config);
+  const vector = await provider.embedSingle(filePath, 'search_query: ');
   return searchGitHistory(vector, limit, `file_path = '${escapedPath}'`);
 }
 
@@ -27,76 +37,83 @@ export async function explain(
   repoPath: string,
   config: CodeSearchConfig,
   verbose: boolean = false,
-): Promise<string> {
-  await ensureStores();
+): Promise<ExplainResult> {
+  await ensureStores(config.storeUri);
 
-  const lines: string[] = [];
-  let hasCodeResults = false;
-  let hasGitResults = false;
+  const result: ExplainResult = { codeResults: [], gitResults: [] };
 
   // Search code index
-  let codeResults: SearchResult[] = [];
   try {
-    codeResults = await searchCode(query, repoPath, 5, undefined, verbose);
-    hasCodeResults = codeResults.length > 0;
+    const codeResults = await searchCode(query, repoPath, 5, undefined, verbose);
+    for (const cr of codeResults) {
+      let fileHistory: GitHistorySearchResult[] = [];
+      try {
+        fileHistory = await getHistoryForFile(cr.chunk.file_path, repoPath, config, 3);
+      } catch {
+        // Git index may not exist
+      }
+      result.codeResults.push({ ...cr, fileHistory });
+    }
   } catch {
-    codeResults = [];
+    // Code index may not exist
   }
 
-  // For each code result, find related git commits
-  if (codeResults.length > 0) {
+  // Direct git history search
+  try {
+    const provider = createProvider(config);
+    const vector = await provider.embedSingle(query, 'search_query: ');
+    result.gitResults = await searchGitHistory(vector, 5);
+  } catch {
+    // Git index may not exist
+  }
+
+  return result;
+}
+
+export function formatExplainResult(result: ExplainResult, query: string): string {
+  const lines: string[] = [];
+  const hasCodeResults = result.codeResults.length > 0;
+  const hasGitResults = result.gitResults.length > 0 ||
+    result.codeResults.some(cr => cr.fileHistory.length > 0);
+
+  if (result.codeResults.length > 0) {
     lines.push(chalk.bold(`Code matches for "${query}":`));
     lines.push('');
 
-    for (let i = 0; i < codeResults.length; i++) {
-      const { chunk, score } = codeResults[i];
+    for (let i = 0; i < result.codeResults.length; i++) {
+      const { chunk, score, fileHistory } = result.codeResults[i];
       lines.push(
         `${chalk.dim(`${i + 1}.`)} ${chalk.cyan(`[${score.toFixed(2)}]`)} ${chalk.white(chunk.file_path)}:${chunk.line_start}-${chunk.line_end} ${chalk.dim('—')} ${chunk.name} (${chunk.chunk_type}${chunk.exported ? ', exported' : ''})`,
       );
 
-      // Find git history for this file
-      try {
-        const fileHistory = await getHistoryForFile(chunk.file_path, repoPath, config, 3);
-        if (fileHistory.length > 0) {
-          hasGitResults = true;
-          lines.push(`   ${chalk.dim('Recent commits:')}`);
-          for (const { chunk: gc } of fileHistory) {
-            lines.push(
-              `     ${chalk.dim('-')} ${chalk.yellow(gc.sha.slice(0, 7))} ${gc.date.slice(0, 10)} ${chalk.green(gc.author)}: ${gc.subject}`,
-            );
-          }
+      if (fileHistory.length > 0) {
+        lines.push(`   ${chalk.dim('Recent commits:')}`);
+        for (const { chunk: gc } of fileHistory) {
+          lines.push(
+            `     ${chalk.dim('-')} ${chalk.yellow(gc.sha.slice(0, 7))} ${gc.date.slice(0, 10)} ${chalk.green(gc.author)}: ${gc.subject}`,
+          );
         }
-      } catch {
-        // Git index may not exist
       }
 
       lines.push('');
     }
   }
 
-  // Also do a direct git history search
-  try {
-    const vector = await embedSingle(query, config.embeddingModel, 'search_query: ');
-    const gitResults = await searchGitHistory(vector, 5);
-    if (gitResults.length > 0) {
-      hasGitResults = true;
-      lines.push(chalk.bold(`Git history matches for "${query}":`));
-      lines.push('');
-      for (let i = 0; i < gitResults.length; i++) {
-        const { chunk, score } = gitResults[i];
-        lines.push(
-          `${chalk.dim(`${i + 1}.`)} ${chalk.cyan(`[${score.toFixed(2)}]`)} ${chalk.yellow(chunk.sha.slice(0, 7))} ${chunk.date.slice(0, 10)} ${chalk.green(chunk.author)}`,
-        );
-        lines.push(`   ${chunk.subject}`);
-        if (chunk.file_path) {
-          lines.push(`   ${chalk.dim(`File: ${chunk.file_path}`)}`);
-        }
-        lines.push(`   ${chalk.dim(`Files: ${chunk.files_changed} changed (+${chunk.additions}/-${chunk.deletions})`)}`);
-        lines.push('');
+  if (result.gitResults.length > 0) {
+    lines.push(chalk.bold(`Git history matches for "${query}":`));
+    lines.push('');
+    for (let i = 0; i < result.gitResults.length; i++) {
+      const { chunk, score } = result.gitResults[i];
+      lines.push(
+        `${chalk.dim(`${i + 1}.`)} ${chalk.cyan(`[${score.toFixed(2)}]`)} ${chalk.yellow(chunk.sha.slice(0, 7))} ${chunk.date.slice(0, 10)} ${chalk.green(chunk.author)}`,
+      );
+      lines.push(`   ${chunk.subject}`);
+      if (chunk.file_path) {
+        lines.push(`   ${chalk.dim(`File: ${chunk.file_path}`)}`);
       }
+      lines.push(`   ${chalk.dim(`Files: ${chunk.files_changed} changed (+${chunk.additions}/-${chunk.deletions})`)}`);
+      lines.push('');
     }
-  } catch {
-    // Git index may not exist
   }
 
   if (!hasCodeResults && !hasGitResults) {

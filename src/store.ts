@@ -11,8 +11,10 @@ const GIT_TABLE_NAME = 'git_history';
 let db: Connection;
 const tables = new Map<string, Table>();
 
-export async function initStore(customDbPath?: string): Promise<void> {
-  const dbPath = customDbPath || `${TOOL_ROOT}/.lance`;
+export async function initStore(storeUri?: string): Promise<void> {
+  const dbPath = storeUri
+    || process.env.CORTEX_RECALL_STORE_URI
+    || `${TOOL_ROOT}/.lance`;
   db = await connect(dbPath);
   const tableNames = await db.tableNames();
   if (tableNames.includes(TABLE_NAME)) {

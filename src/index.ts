@@ -13,7 +13,7 @@ import { TypeScriptPlugin } from './lang/typescript/index.js';
 import { PythonPlugin } from './lang/python/index.js';
 import { indexGitFull, indexGitIncremental } from './git/indexer.js';
 import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
-import { explain } from './git/cross-ref.js';
+import { explain, formatExplainResult } from './git/cross-ref.js';
 
 registry.register(new TypeScriptPlugin());
 registry.register(new PythonPlugin());
@@ -68,19 +68,24 @@ program
   .description('Index a repository for semantic search')
   .option('--full', 'Force a full re-index (default: incremental)')
   .option('--repo <path>', 'Path to the repository root')
+  .option('--provider <name>', 'Embedding provider: ollama or openai')
+  .option('--model <name>', 'Embedding model name')
   .option('--verbose', 'Show detailed output')
   .action(async (opts) => {
     const repoRoot = resolveRepo(opts.repo);
     try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      if (opts.provider) config.embeddingProvider = opts.provider;
+      if (opts.model) config.embeddingModel = opts.model;
       if (opts.full) {
-        await indexFull(repoRoot, opts.verbose);
+        await indexFull(repoRoot, opts.verbose, config);
       } else {
-        await indexIncremental(repoRoot, opts.verbose);
+        await indexIncremental(repoRoot, opts.verbose, config);
       }
     } catch (err) {
       console.error(chalk.red(`\nIndex failed:\n${formatError(err)}`));
-      if (formatError(err).includes('Ollama')) {
-        console.error(chalk.dim('\nTip: Make sure Ollama is running and the model is pulled.'));
+      if (formatError(err).includes('Ollama') || formatError(err).includes('OpenAI')) {
+        console.error(chalk.dim('\nTip: Make sure your embedding provider is running and configured.'));
       }
       process.exit(1);
     }
@@ -92,12 +97,17 @@ program
   .option('--repo <path>', 'Path to the repository root')
   .option('--limit <n>', 'Maximum number of results', parseInt)
   .option('--filter <path-prefix>', 'Filter results by file path prefix')
+  .option('--format <type>', 'Output format: text or json', 'text')
   .option('--verbose', 'Show detailed output')
   .action(async (search, opts) => {
     const repoRoot = resolveRepo(opts.repo);
     try {
       const results = await searchCode(search, repoRoot, opts.limit, opts.filter, opts.verbose);
-      console.log(formatResults(results, search));
+      if (opts.format === 'json') {
+        console.log(JSON.stringify({ query: search, results }, null, 2));
+      } else {
+        console.log(formatResults(results, search));
+      }
     } catch (err) {
       const msg = formatError(err);
       console.error(chalk.red(`\nSearch failed:\n${msg}`));
@@ -115,17 +125,23 @@ program
   .command('stats')
   .description('Show index statistics')
   .option('--repo <path>', 'Path to the repository root')
+  .option('--format <type>', 'Output format: text or json', 'text')
   .action(async (opts) => {
     try {
-      resolveRepo(opts.repo); // validate
-      await initStore();
+      const repoRoot = resolveRepo(opts.repo);
+      const config = loadConfig(repoRoot, false);
+      await initStore(config.storeUri);
       const stats = await getStats();
-      console.log(chalk.blue('Index Statistics'));
-      console.log(`  Total chunks: ${chalk.white(stats.totalChunks.toString())}`);
-      console.log(`  Unique files: ${chalk.white(stats.uniqueFiles.toString())}`);
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(stats, null, 2));
+      } else {
+        console.log(chalk.blue('Index Statistics'));
+        console.log(`  Total chunks: ${chalk.white(stats.totalChunks.toString())}`);
+        console.log(`  Unique files: ${chalk.white(stats.uniqueFiles.toString())}`);
 
-      if (stats.totalChunks === 0) {
-        console.log(chalk.dim('\nNo data indexed yet. Run: cortex-recall index --full --repo <path>'));
+        if (stats.totalChunks === 0) {
+          console.log(chalk.dim('\nNo data indexed yet. Run: cortex-recall index --full --repo <path>'));
+        }
       }
     } catch (err) {
       console.error(chalk.red(`\nStats failed:\n${formatError(err)}`));
@@ -164,12 +180,16 @@ program
   .description('Index git history for semantic search')
   .option('--full', 'Force a full re-index (default: incremental)')
   .option('--repo <path>', 'Path to the repository root')
+  .option('--provider <name>', 'Embedding provider: ollama or openai')
+  .option('--model <name>', 'Embedding model name')
   .option('--max-commits <n>', 'Limit to the last N commits (default: all)', parseInt)
   .option('--verbose', 'Show detailed output')
   .action(async (opts) => {
     const repoRoot = resolveRepo(opts.repo);
     try {
       const config = loadConfig(repoRoot, false);
+      if (opts.provider) config.embeddingProvider = opts.provider;
+      if (opts.model) config.embeddingModel = opts.model;
       if (opts.maxCommits !== undefined) {
         config.git!.maxCommits = opts.maxCommits;
       }
@@ -184,8 +204,8 @@ program
       }
     } catch (err) {
       console.error(chalk.red(`\nGit index failed:\n${formatError(err)}`));
-      if (formatError(err).includes('Ollama')) {
-        console.error(chalk.dim('\nTip: Make sure Ollama is running and the model is pulled.'));
+      if (formatError(err).includes('Ollama') || formatError(err).includes('OpenAI')) {
+        console.error(chalk.dim('\nTip: Make sure your embedding provider is running and configured.'));
       }
       process.exit(1);
     }
@@ -200,6 +220,7 @@ program
   .option('--file <path>', 'Filter by file path')
   .option('--type <type>', 'Filter by commit type (feat, fix, refactor, ...)')
   .option('--limit <n>', 'Maximum number of results', parseInt)
+  .option('--format <type>', 'Output format: text or json', 'text')
   .option('--verbose', 'Show detailed output')
   .action(async (query, opts) => {
     const repoRoot = resolveRepo(opts.repo);
@@ -212,7 +233,11 @@ program
         type: opts.type,
         limit: opts.limit,
       });
-      console.log(formatGitResults(results, query));
+      if (opts.format === 'json') {
+        console.log(JSON.stringify({ query, results }, null, 2));
+      } else {
+        console.log(formatGitResults(results, query));
+      }
     } catch (err) {
       const msg = formatError(err);
       console.error(chalk.red(`\nGit search failed:\n${msg}`));
@@ -230,20 +255,26 @@ program
   .command('git-stats')
   .description('Show git history index statistics')
   .option('--repo <path>', 'Path to the repository root')
+  .option('--format <type>', 'Output format: text or json', 'text')
   .action(async (opts) => {
     try {
-      resolveRepo(opts.repo); // validate
-      await initStore();
+      const repoRoot = resolveRepo(opts.repo);
+      const config = loadConfig(repoRoot, false);
+      await initStore(config.storeUri);
       await initGitHistoryTable();
       const stats = await getGitStats();
-      console.log(chalk.blue('Git History Index Statistics'));
-      console.log(`  Total chunks:   ${chalk.white(stats.totalChunks.toString())}`);
-      console.log(`  Unique commits: ${chalk.white(stats.uniqueCommits.toString())}`);
-      if (stats.dateRange) {
-        console.log(`  Date range:     ${chalk.white(`${stats.dateRange.earliest.slice(0, 10)} to ${stats.dateRange.latest.slice(0, 10)}`)}`);
-      }
-      if (stats.totalChunks === 0) {
-        console.log(chalk.dim('\nNo git history indexed yet. Run: cortex-recall git-index --full --repo <path>'));
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(stats, null, 2));
+      } else {
+        console.log(chalk.blue('Git History Index Statistics'));
+        console.log(`  Total chunks:   ${chalk.white(stats.totalChunks.toString())}`);
+        console.log(`  Unique commits: ${chalk.white(stats.uniqueCommits.toString())}`);
+        if (stats.dateRange) {
+          console.log(`  Date range:     ${chalk.white(`${stats.dateRange.earliest.slice(0, 10)} to ${stats.dateRange.latest.slice(0, 10)}`)}`);
+        }
+        if (stats.totalChunks === 0) {
+          console.log(chalk.dim('\nNo git history indexed yet. Run: cortex-recall git-index --full --repo <path>'));
+        }
       }
     } catch (err) {
       console.error(chalk.red(`\nGit stats failed:\n${formatError(err)}`));
@@ -255,13 +286,18 @@ program
   .command('explain <query>')
   .description('Combined code context + git history search')
   .option('--repo <path>', 'Path to the repository root')
+  .option('--format <type>', 'Output format: text or json', 'text')
   .option('--verbose', 'Show detailed output')
   .action(async (query, opts) => {
     const repoRoot = resolveRepo(opts.repo);
     try {
       const config = loadConfig(repoRoot, opts.verbose);
-      const output = await explain(query, repoRoot, config, opts.verbose);
-      console.log(output);
+      const result = await explain(query, repoRoot, config, opts.verbose);
+      if (opts.format === 'json') {
+        console.log(JSON.stringify({ query, ...result }, null, 2));
+      } else {
+        console.log(formatExplainResult(result, query));
+      }
     } catch (err) {
       console.error(chalk.red(`\nExplain failed:\n${formatError(err)}`));
       process.exit(1);
