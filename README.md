@@ -1,24 +1,38 @@
 # cortex-recall
 
-Local semantic code search and RAG CLI. Primary consumer: Claude Code.
+Semantic code & git history search CLI. Primary consumer: Claude Code.
 
-Uses tree-sitter AST parsing, nomic-embed-text embeddings (via Ollama), and LanceDB vector storage.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 
-### Supported Languages
+- **Multi-language** — TypeScript/TSX/JS/JSX and Python via tree-sitter AST parsing
+- **Pluggable embeddings** — Ollama (local, default) or OpenAI-compatible APIs
+- **Local + remote storage** — LanceDB on disk, or S3/GCS via URI
+- **JSON output** — `--format json` on all read commands for tool integration
+- **Git history search** — semantic search over commits, diffs, and cross-referenced code
 
-**Code indexing** (`index`, `query`) parses source files with tree-sitter and only supports JavaScript/TypeScript:
-- `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.mts`
-- Chunking heuristics are React/NextJS-aware (components, hooks, route handlers, pages, layouts)
+## Supported Languages
+
+**Code indexing** (`index`, `query`) parses source files with tree-sitter:
+
+- TypeScript / TSX / JS / JSX (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.mts`) — React/NextJS-aware chunking (components, hooks, route handlers, pages, layouts)
+- Python (`.py`) — class/decorator-aware chunking
 
 **Git history search** (`git-index`, `git-search`, `explain`) indexes commit messages and diffs — works on any repo regardless of language.
 
 ## Prerequisites
+
+**Ollama** (default, local):
 
 ```bash
 brew install ollama
 ollama serve          # or: brew services start ollama
 ollama pull nomic-embed-text
 ```
+
+**OpenAI** (remote — no local dependencies):
+
+Set `OPENAI_API_KEY` in your environment and pass `--provider openai --model text-embedding-3-small` to index commands.
 
 ## Installation
 
@@ -41,6 +55,10 @@ npx tsx src/index.ts index --full --repo /path/to/monorepo
 # Incremental (only changed files since last index)
 npx tsx src/index.ts index --repo /path/to/monorepo
 
+# With a specific provider/model
+npx tsx src/index.ts index --full --repo /path/to/monorepo \
+  --provider openai --model text-embedding-3-small
+
 # With verbose output
 npx tsx src/index.ts index --full --repo /path/to/monorepo --verbose
 ```
@@ -56,12 +74,16 @@ npx tsx src/index.ts query "database connection" --repo /path/to/monorepo --limi
 
 # Filter by file path prefix
 npx tsx src/index.ts query "user model" --repo /path/to/monorepo --filter packages/api/src
+
+# JSON output (for tool consumption)
+npx tsx src/index.ts query "auth" --repo /path/to/monorepo --format json
 ```
 
 ### Stats
 
 ```bash
 npx tsx src/index.ts stats --repo /path/to/monorepo
+npx tsx src/index.ts stats --repo /path/to/monorepo --format json
 ```
 
 ### Init Config
@@ -77,17 +99,29 @@ Create `.cortexrc.json` at the repo root (or use `cortex-recall init`):
 
 ```json
 {
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", "**/*.py"],
   "exclude": ["node_modules/**", "dist/**", ".next/**"],
   "excludePatterns": ["**/generated/**"],
   "maxFileLines": 2000,
   "indexTests": false,
   "chunkMaxTokens": 8000,
+  "embeddingProvider": "ollama",
   "embeddingModel": "nomic-embed-text",
+  "embeddingApiKey": "",
+  "embeddingBaseUrl": "",
   "embeddingBatchSize": 50,
+  "storeUri": "",
   "searchLimit": 5
 }
 ```
+
+| Field | Default | CLI flag | Env var |
+|-------|---------|----------|---------|
+| `embeddingProvider` | `"ollama"` | `--provider` | — |
+| `embeddingModel` | `"nomic-embed-text"` | `--model` | — |
+| `embeddingApiKey` | — | — | `OPENAI_API_KEY` |
+| `embeddingBaseUrl` | — | — | `OLLAMA_BASE_URL` / `OPENAI_BASE_URL` |
+| `storeUri` | local `.lance/` | — | `CORTEX_RECALL_STORE_URI` |
 
 - `excludePatterns` is additive to `exclude`
 - `indexTests` controls whether `.test.ts`, `.spec.ts`, `__tests__/` files are indexed
@@ -96,21 +130,28 @@ Create `.cortexrc.json` at the repo root (or use `cortex-recall init`):
 
 ```
 src/
-  index.ts        CLI entry point (Commander.js)
-  types.ts        Core types: CodeChunk, SearchResult, IndexState, Config, Git types
-  parser.ts       Tree-sitter WASM initialization + file parsing
-  chunker.ts      AST → CodeChunk[] with NextJS-aware extraction
-  embedder.ts     Ollama API client (batch embed, health check, prefix support)
-  store.ts        LanceDB vector store wrapper (code + git tables)
-  indexer.ts      Full + incremental code indexing orchestration
-  search.ts       Code query embedding + vector search + formatting
+  index.ts           CLI entry point (Commander.js)
+  types.ts           Core types: CodeChunk, SearchResult, IndexState, Config
+  parser.ts          Re-export from lang/typescript (compat)
+  chunker.ts         Re-export from lang/typescript (compat)
+  store.ts           LanceDB vector store (local or remote URI)
+  indexer.ts         Full + incremental code indexing orchestration
+  search.ts          Code query embedding + vector search + formatting
+  embeddings/
+    provider.ts      EmbeddingProvider interface + createProvider() factory
+    ollama.ts        OllamaProvider — Ollama /api/embed, prefix support
+    openai.ts        OpenAIProvider — OpenAI /v1/embeddings
+  lang/
+    plugin.ts        LanguagePlugin interface + PluginRegistry
+    typescript/      TS/TSX parser, chunker (NextJS rules), vendored WASM grammars
+    python/          Python parser, chunker (class/decorator-aware), vendored WASM
   git/
-    extractor.ts  Git commit streaming for indexer
-    chunker.ts    GitCommitRaw → GitHistoryChunk[] (3 chunk levels)
-    enricher.ts   Low-quality commit message enrichment
-    indexer.ts     Git history indexing pipeline orchestration
-    search.ts     Semantic vector search with metadata filters
-    cross-ref.ts  Code ↔ git history cross-referencing
+    extractor.ts     Git commit streaming for indexer
+    chunker.ts       GitCommitRaw → GitHistoryChunk[] (3 chunk levels)
+    enricher.ts      Low-quality commit message enrichment
+    indexer.ts       Git history indexing pipeline orchestration
+    search.ts        Semantic vector search with metadata filters
+    cross-ref.ts     Code ↔ git cross-referencing; explain() returns ExplainResult
 ```
 
 ### Chunking Rules
@@ -122,6 +163,7 @@ src/
 - `type_alias_declaration` — TypeScript type aliases
 - `lexical_declaration` — const/let with arrow functions or function expressions
 - `export_statement` — unwrapped to inner declaration
+- Python: `function_definition`, `class_definition`, `decorated_definition`
 
 **Chunk type detection:**
 - PascalCase + arrow fn / returns JSX → `component`
@@ -142,13 +184,15 @@ src/
 
 ### Embedding
 
-- Model: `nomic-embed-text` (768 dimensions)
-- Batched in groups of 50 via Ollama `/api/embed`
+- Default model: `nomic-embed-text` (768 dimensions) via Ollama
+- OpenAI option: `text-embedding-3-small` (1536 dimensions) or any compatible model
+- Batched in groups of 50 (code) / 20 (git)
 - Dimension verified at runtime via probe embed
 
 ### Storage
 
-- LanceDB at `cortex-recall/.lance/`
+- LanceDB at `cortex-recall/.lance/` (default)
+- Remote storage via `storeUri` or `CORTEX_RECALL_STORE_URI` (e.g. `s3://bucket/cortex`)
 - Cosine distance for similarity
 - State tracked in `cortex-recall/.cortex-recall-state.json`
 
@@ -160,13 +204,16 @@ Semantic search over git commit history. Indexes commits into a separate LanceDB
 
 - **commit_summary** — natural language description of each commit (always generated)
 - **file_diff** — per-file diff content for each changed file (configurable)
-- ~~**merge_group**~~ — removed; merge commits are now skipped entirely during indexing
 
 ### Git Commands
 
 ```bash
 # Full git history index
 npx tsx src/index.ts git-index --full --repo /path/to/repo
+
+# With a specific provider/model
+npx tsx src/index.ts git-index --full --repo /path/to/repo \
+  --provider openai --model text-embedding-3-small
 
 # Incremental (new commits since last index)
 npx tsx src/index.ts git-index --repo /path/to/repo
@@ -178,16 +225,21 @@ npx tsx src/index.ts git-search "why did we switch auth providers" --repo /path/
 npx tsx src/index.ts git-search "auth changes" --after 2025-01-01 --repo /path/to/repo
 npx tsx src/index.ts git-search "API updates" --author "John" --type feat --repo /path/to/repo
 
+# JSON output
+npx tsx src/index.ts git-search "auth" --repo /path/to/repo --format json
+
 # Git index statistics
 npx tsx src/index.ts git-stats --repo /path/to/repo
+npx tsx src/index.ts git-stats --repo /path/to/repo --format json
 
-# Combined code + git history search (the killer feature)
+# Combined code + git history search
 npx tsx src/index.ts explain "authenticateUser" --repo /path/to/repo
+npx tsx src/index.ts explain "authenticateUser" --repo /path/to/repo --format json
 ```
 
 ### The `explain` Command
 
-Bridges code search and git history. For each code match, it finds related commits. Shows both code context and change history in one view — ideal for understanding *what* code does and *why* it was written.
+Bridges code search and git history. For each code match, it finds related commits. Shows both code context and change history in one view — ideal for understanding *what* code does and *why* it was written. Returns an `ExplainResult` struct.
 
 ### Git Config Options
 
@@ -215,18 +267,31 @@ Add to `.cortexrc.json`:
 - Incremental indexing only processes commits since last index
 - All commits are indexed by default; set `maxCommits` to limit for very large repos
 
+## CI/CD
+
+Example: OpenAI embeddings + S3 store + JSON output in a CI pipeline:
+
+```bash
+OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+CORTEX_RECALL_STORE_URI=s3://my-bucket/cortex \
+  npx tsx src/index.ts index --full --repo . \
+    --provider openai --model text-embedding-3-small
+
+npx tsx src/index.ts query "auth middleware" --repo . --format json > results.json
+```
+
 ## Using with Claude Code
 
-Add to your monorepo's `CLAUDE.md`:
+Add to your repo's `CLAUDE.md`:
 
 ```markdown
 ## Semantic Code Search
 
 Search the codebase semantically using the cortex-recall CLI:
-  npx tsx ~/cortex-recall/src/index.ts query "<search>" --repo .
+  npx tsx ~/cortex-recall/src/index.ts query "<search>" --repo . --format json
   npx tsx ~/cortex-recall/src/index.ts index --repo .
-  npx tsx ~/cortex-recall/src/index.ts git-search "<search>" --repo .
-  npx tsx ~/cortex-recall/src/index.ts explain "<search>" --repo .
+  npx tsx ~/cortex-recall/src/index.ts git-search "<search>" --repo . --format json
+  npx tsx ~/cortex-recall/src/index.ts explain "<search>" --repo . --format json
 
 Use `cortex-recall query` before exploring unfamiliar parts of the codebase.
 Use `cortex-recall git-search` to understand why code was changed.

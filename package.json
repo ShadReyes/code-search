@@ -1,7 +1,7 @@
 {
   "name": "cortex-recall",
   "version": "0.1.0",
-  "description": "Local semantic code search and RAG CLI for NextJS monorepos",
+  "description": "Semantic code & git history search CLI with pluggable embeddings and vector storage",
   "type": "module",
   "license": "MIT",
   "author": "ShadReyes",
@@ -14,12 +14,19 @@
     "url": "https://github.com/ShadReyes/cortex-recall/issues"
   },
   "keywords": [
-    "cortex-recall",
     "semantic-search",
+    "code-search",
+    "vector-search",
+    "embeddings",
+    "rag",
     "tree-sitter",
     "ollama",
+    "openai",
     "lancedb",
-    "cli"
+    "cli",
+    "developer-tools",
+    "monorepo",
+    "git-search"
   ],
   "engines": {
     "node": ">=22.0.0"
