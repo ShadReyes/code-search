@@ -3,7 +3,7 @@ export interface CodeChunk {
   file_path: string;
   package_name: string;
   name: string;
-  chunk_type: 'function' | 'class' | 'component' | 'hook' | 'type' | 'interface' | 'route' | 'config' | 'other';
+  chunk_type: 'function' | 'class' | 'component' | 'hook' | 'type' | 'interface' | 'route' | 'config' | 'decorator' | 'other';
   line_start: number;
   line_end: number;
   content: string;
@@ -111,6 +111,7 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
     '**/*.jsx',
     '**/*.mjs',
     '**/*.mts',
+    '**/*.py',
   ],
   exclude: [
     'node_modules/**',

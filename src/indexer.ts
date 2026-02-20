@@ -5,8 +5,7 @@ import { glob } from 'glob';
 import { minimatch } from 'minimatch';
 import merge from 'lodash.merge';
 import chalk from 'chalk';
-import { initParser } from './parser.js';
-import { chunkFile } from './chunker.js';
+import { registry } from './lang/plugin.js';
 import { checkOllamaHealth, embedBatch, probeEmbeddingDimension } from './embedder.js';
 import { initStore, insertChunks, deleteByFilePath, dropTable } from './store.js';
 import { DEFAULT_CONFIG, type CodeSearchConfig, type IndexState, type CodeChunk } from './types.js';
@@ -94,9 +93,7 @@ export function discoverFiles(repoRoot: string, config: CodeSearchConfig): strin
 }
 
 export function isTestFile(relativePath: string): boolean {
-  return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(relativePath) ||
-    relativePath.includes('__tests__/') ||
-    relativePath.includes('__mocks__/');
+  return registry.isTestFile(relativePath);
 }
 
 function getGitCommitHash(repoRoot: string): string {
@@ -135,7 +132,7 @@ export async function indexFull(
   if (verbose) console.log(chalk.dim(`Embedding dimension: ${dimension}`));
 
   // Initialize
-  await initParser();
+  await registry.initAll();
   await initStore();
 
   // Discover files
@@ -148,8 +145,10 @@ export async function indexFull(
 
   for (const filePath of files) {
     try {
+      const plugin = registry.getPluginForFile(filePath);
+      if (!plugin) { skipped++; continue; }
       const content = readFileSync(filePath, 'utf-8');
-      const chunks = chunkFile(filePath, content, repoRoot, config.chunkMaxTokens);
+      const chunks = plugin.chunkFile(filePath, content, repoRoot, config.chunkMaxTokens);
       allChunks.push(...chunks);
     } catch (err) {
       skipped++;
@@ -207,7 +206,7 @@ export async function indexIncremental(
   await checkOllamaHealth(config.embeddingModel);
 
   // Initialize
-  await initParser();
+  await registry.initAll();
   await initStore();
 
   // Get changed files
@@ -269,7 +268,9 @@ export async function indexIncremental(
       const lines = content.split('\n').length;
       if (lines > config.maxFileLines) continue;
 
-      const chunks = chunkFile(absPath, content, repoRoot, config.chunkMaxTokens);
+      const plugin = registry.getPluginForFile(absPath);
+      if (!plugin) continue;
+      const chunks = plugin.chunkFile(absPath, content, repoRoot, config.chunkMaxTokens);
       allChunks.push(...chunks);
     } catch (err) {
       if (verbose) {

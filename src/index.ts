@@ -8,9 +8,15 @@ import { indexFull, indexIncremental, loadConfig } from './indexer.js';
 import { searchCode, formatResults } from './search.js';
 import { initStore, getStats, getGitStats, initGitHistoryTable } from './store.js';
 import { DEFAULT_CONFIG } from './types.js';
+import { registry } from './lang/plugin.js';
+import { TypeScriptPlugin } from './lang/typescript/index.js';
+import { PythonPlugin } from './lang/python/index.js';
 import { indexGitFull, indexGitIncremental } from './git/indexer.js';
 import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
 import { explain } from './git/cross-ref.js';
+
+registry.register(new TypeScriptPlugin());
+registry.register(new PythonPlugin());
 
 const program = new Command();
 

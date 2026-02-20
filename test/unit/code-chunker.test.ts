@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { initParser } from '../../src/parser.js';
-import { chunkFile } from '../../src/chunker.js';
+import { initParser } from '../../src/lang/typescript/parser.js';
+import { chunkFile } from '../../src/lang/typescript/chunker.js';
 
 const FIXTURES = join(import.meta.dirname, '../../bench/fixtures');
 const REPO_ROOT = join(import.meta.dirname, '../../bench/fixtures');

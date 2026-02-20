@@ -1,9 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { isTestFile, loadConfig, discoverFiles } from '../../src/indexer.js';
 import { DEFAULT_CONFIG } from '../../src/types.js';
+import { registry } from '../../src/lang/plugin.js';
+import { TypeScriptPlugin } from '../../src/lang/typescript/index.js';
+import { PythonPlugin } from '../../src/lang/python/index.js';
+
+beforeAll(() => {
+  registry.register(new TypeScriptPlugin());
+  registry.register(new PythonPlugin());
+});
 
 describe('isTestFile', () => {
   it('foo.test.ts → true', () => {
@@ -120,6 +128,16 @@ describe('discoverFiles', () => {
     writeFile('src/index.test.ts', 'test("x", () => {});');
     const files = discoverFiles(tmpDir, { ...DEFAULT_CONFIG, indexTests: true });
     expect(files).toHaveLength(2);
+  });
+
+  it('finds .py files', () => {
+    writeFile('src/index.ts', 'export const x = 1;');
+    writeFile('lib/main.py', 'def main():\n    pass\n');
+    const files = discoverFiles(tmpDir, { ...DEFAULT_CONFIG });
+    expect(files).toHaveLength(2);
+    const exts = files.map(f => f.slice(f.lastIndexOf('.')));
+    expect(exts).toContain('.ts');
+    expect(exts).toContain('.py');
   });
 
   it('skips oversized files (maxFileLines)', () => {
