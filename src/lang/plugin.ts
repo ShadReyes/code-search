@@ -28,7 +28,9 @@ export class PluginRegistry {
   }
 
   async initAll(): Promise<void> {
-    await Promise.all(this.plugins.map(p => p.init()));
+    for (const p of this.plugins) {
+      await p.init();
+    }
   }
 }
 
