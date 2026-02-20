@@ -158,7 +158,7 @@ program
   .description('Index git history for semantic search')
   .option('--full', 'Force a full re-index (default: incremental)')
   .option('--repo <path>', 'Path to the repository root')
-  .option('--max-commits <n>', 'Max commits to index (default: 500, 0 = unlimited)', parseInt)
+  .option('--max-commits <n>', 'Limit to the last N commits (default: all)', parseInt)
   .option('--verbose', 'Show detailed output')
   .action(async (opts) => {
     const repoRoot = resolveRepo(opts.repo);

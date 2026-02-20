@@ -137,6 +137,6 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
     lowQualityThreshold: 10,
     skipBotAuthors: ['dependabot', 'renovate', 'github-actions'],
     skipMessagePatterns: ['^Merge branch', 'lock file'],
-    maxCommits: 500,
+    maxCommits: 0,
   },
 };

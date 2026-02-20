@@ -205,7 +205,7 @@ Add to `.cortexrc.json`:
 - Streams commits via async generators — memory stays flat regardless of repo size
 - Batch embedding (20 chunks for git, 50 for code) with progressive flush to LanceDB
 - Incremental indexing only processes commits since last index
-- `maxCommits` can limit initial indexing for very large repos
+- All commits are indexed by default; set `maxCommits` to limit for very large repos
 
 ## Using with Claude Code
 
@@ -250,7 +250,7 @@ Ensure you're pointing `--repo` at a directory containing a `.git` folder.
 
 **Slow git indexing**
 - Large repos with thousands of commits take time on first index
-- Set `"maxCommits": 5000` in config to limit initial indexing
+- Set `"maxCommits": 1000` in config to limit initial indexing
 - Disable `"includeFileChunks": false` to skip per-file diffs (fastest)
 - Incremental re-indexes are fast after initial index
 

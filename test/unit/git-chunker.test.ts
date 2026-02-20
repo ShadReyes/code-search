@@ -36,7 +36,7 @@ function makeConfig(overrides: Partial<GitConfig> = {}): GitConfig {
     lowQualityThreshold: 10,
     skipBotAuthors: [],
     skipMessagePatterns: [],
-    maxCommits: 500,
+    maxCommits: 0,
     ...overrides,
   };
 }
