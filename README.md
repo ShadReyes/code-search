@@ -97,11 +97,11 @@ src/
   indexer.ts      Full + incremental code indexing orchestration
   search.ts       Code query embedding + vector search + formatting
   git/
-    extractor.ts  Git command wrappers (log, blame, pickaxe, grep, diff)
+    extractor.ts  Git commit streaming for indexer
     chunker.ts    GitCommitRaw → GitHistoryChunk[] (3 chunk levels)
     enricher.ts   Low-quality commit message enrichment
     indexer.ts     Git history indexing pipeline orchestration
-    search.ts     Hybrid query router (5 strategies)
+    search.ts     Semantic vector search with metadata filters
     cross-ref.ts  Code ↔ git history cross-referencing
 ```
 
@@ -146,7 +146,7 @@ src/
 
 ## Git History Search
 
-Semantic search over git commit history. Indexes commits into a separate LanceDB table and provides hybrid search across 5 strategies.
+Semantic search over git commit history. Indexes commits into a separate LanceDB table and provides vector search with optional metadata filters.
 
 ### Chunk Levels
 
@@ -170,30 +170,12 @@ npx tsx src/index.ts git-search "why did we switch auth providers" --repo /path/
 npx tsx src/index.ts git-search "auth changes" --after 2025-01-01 --repo /path/to/repo
 npx tsx src/index.ts git-search "API updates" --author "John" --type feat --repo /path/to/repo
 
-# Line-level blame
-npx tsx src/index.ts git-blame src/auth/login.ts 45 60 --repo /path/to/repo
-
-# Find when a string was introduced
-npx tsx src/index.ts git-pickaxe "getUserById" --repo /path/to/repo
-
 # Git index statistics
 npx tsx src/index.ts git-stats --repo /path/to/repo
 
 # Combined code + git history search (the killer feature)
 npx tsx src/index.ts explain "authenticateUser" --repo /path/to/repo
 ```
-
-### Query Router Strategies
-
-The git search automatically classifies queries:
-
-| Strategy | Trigger Examples | What It Does |
-|----------|-----------------|--------------|
-| `vector` | "why did we...", general questions | Semantic vector search |
-| `temporal_vector` | "recently", "last month", "since 2025" | Vector search + date filter |
-| `pickaxe` | "when was X introduced" | `git log -S` + LanceDB lookup |
-| `blame` | "who wrote", "blame" | `git blame` + LanceDB lookup |
-| `structured_git` | "what changed in", "commits by" | File/author filters + grep |
 
 ### The `explain` Command
 
