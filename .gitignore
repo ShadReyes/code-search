@@ -3,6 +3,7 @@ dist/
 .lance/
 .cortex-recall-state.json
 .git-search-state.json
+.analyze-state.json
 *.tsbuildinfo
 
 # OS

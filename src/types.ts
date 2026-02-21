@@ -55,6 +55,7 @@ export interface GitHistoryChunk {
   additions: number;
   deletions: number;
   branch: string;
+  decision_class: 'decision' | 'routine' | 'unknown';
 }
 
 export interface GitHistorySearchResult {

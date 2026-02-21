@@ -84,6 +84,31 @@ function buildMergeText(commit: GitCommitRaw): string {
   return lines.join('\n');
 }
 
+function classifyDecision(commit: GitCommitRaw): 'decision' | 'routine' | 'unknown' {
+  const subject = commit.subject.toLowerCase();
+  const filesChanged = commit.files.length;
+
+  // Decision signals: significant architectural/feature work
+  const isDecisionType = /^(feat|refactor|revert|perf)/.test(subject);
+  const isManyFiles = filesChanged > 10;
+  const touchesConfig = commit.files.some(f =>
+    /package\.json$|\.config\.(ts|js|mjs)$|tsconfig|\.env|dockerfile|docker-compose/i.test(f.path)
+  );
+
+  if (isDecisionType || isManyFiles || touchesConfig) return 'decision';
+
+  // Routine signals: small fixes, lockfile-only
+  const isFixType = /^fix/.test(subject);
+  const isSmallFix = isFixType && filesChanged <= 3;
+  const isLockfileOnly = commit.files.every(f =>
+    /lock\.json$|\.lock$|go\.sum$/i.test(f.path)
+  );
+
+  if (isSmallFix || isLockfileOnly) return 'routine';
+
+  return 'unknown';
+}
+
 export async function chunkCommit(
   commit: GitCommitRaw,
   repoPath: string,
@@ -94,6 +119,7 @@ export async function chunkCommit(
   const adds = totalAdditions(commit);
   const dels = totalDeletions(commit);
   const chunks: GitHistoryChunk[] = [];
+  const decision_class = classifyDecision(commit);
 
   // 1. commit_summary (always)
   chunks.push({
@@ -113,6 +139,7 @@ export async function chunkCommit(
     additions: adds,
     deletions: dels,
     branch,
+    decision_class,
   });
 
   // 2. file_diff (if enabled) — batch diffs in one git call, parallel fallback
@@ -155,6 +182,7 @@ export async function chunkCommit(
         additions: file.additions,
         deletions: file.deletions,
         branch,
+        decision_class,
       });
     }
   }
@@ -178,6 +206,7 @@ export async function chunkCommit(
       additions: adds,
       deletions: dels,
       branch,
+      decision_class,
     });
   }
 

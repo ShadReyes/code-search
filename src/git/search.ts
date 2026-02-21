@@ -14,10 +14,13 @@ async function ensureStore(storeUri?: string): Promise<void> {
 
 interface SearchOptions {
   after?: string;
+  before?: string;
   author?: string;
   file?: string;
   type?: string;
   limit?: number;
+  sort?: 'relevance' | 'date';
+  uniqueCommits?: boolean;
 }
 
 export async function searchGitHistoryQuery(
@@ -39,12 +42,32 @@ export async function searchGitHistoryQuery(
   }
 
   results.sort((a, b) => b.score - a.score);
-  return results.slice(0, limit);
+
+  // Deduplicate by SHA (keep highest-scoring chunk per commit)
+  let filtered = results;
+  if (options?.uniqueCommits) {
+    const seen = new Map<string, GitHistorySearchResult>();
+    for (const r of filtered) {
+      const existing = seen.get(r.chunk.sha);
+      if (!existing || r.score > existing.score) {
+        seen.set(r.chunk.sha, r);
+      }
+    }
+    filtered = [...seen.values()];
+  }
+
+  // Sort
+  if (options?.sort === 'date') {
+    filtered.sort((a, b) => new Date(b.chunk.date).getTime() - new Date(a.chunk.date).getTime());
+  }
+
+  return filtered.slice(0, limit);
 }
 
 export function formatGitResults(
   results: GitHistorySearchResult[],
   query: string,
+  sortOrder?: 'relevance' | 'date',
 ): string {
   if (results.length === 0) {
     return chalk.yellow(`No results found for "${query}"`);
@@ -54,6 +77,10 @@ export function formatGitResults(
     chalk.bold(`Found ${results.length} results for "${query}"`),
     '',
   ];
+
+    if (sortOrder === 'date') {
+      lines.push(chalk.dim('  (sorted by date, newest first)'));
+    }
 
   for (let i = 0; i < results.length; i++) {
     const { chunk, score } = results[i];
@@ -80,6 +107,7 @@ function escapeSql(value: string): string {
 
 function buildWhereFilters(params?: {
   after?: string;
+  before?: string;
   author?: string;
   file?: string;
   type?: string;
@@ -87,6 +115,7 @@ function buildWhereFilters(params?: {
   if (!params) return null;
   const parts: string[] = [];
   if (params.after) parts.push(`date > '${params.after}'`);
+  if (params.before) parts.push(`date < '${params.before}'`);
   if (params.author) parts.push(`author = '${escapeSql(params.author)}'`);
   if (params.file) parts.push(`file_path = '${escapeSql(params.file)}'`);
   if (params.type) parts.push(`commit_type = '${escapeSql(params.type)}'`);

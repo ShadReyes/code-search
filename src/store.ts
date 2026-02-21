@@ -155,6 +155,7 @@ function gitChunkToRecord(chunk: GitHistoryChunk, vector: number[]): Record<stri
     additions: chunk.additions,
     deletions: chunk.deletions,
     branch: chunk.branch,
+    decision_class: chunk.decision_class,
     vector,
   };
 }
@@ -177,6 +178,7 @@ function recordToGitChunk(record: Record<string, unknown>): GitHistoryChunk {
     additions: record.additions as number,
     deletions: record.deletions as number,
     branch: record.branch as string,
+    decision_class: record.decision_class as GitHistoryChunk['decision_class'],
   };
 }
 

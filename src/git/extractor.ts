@@ -79,9 +79,36 @@ function parseNumstatLine(line: string): GitFileChange | null {
   };
 }
 
+const NUMSTAT_RE = /^(\d+|-)\t(\d+|-)\t.+/;
+
 function parseCommitBlock(headerLine: string, numstatLines: string[]): GitCommitRaw | null {
   // Header: %H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x00%P%x00%D
-  const fields = headerLine.split('\x00');
+  // The body (%b) can be multi-line, so \x00 delimiters for parents/refs
+  // may end up in numstatLines. Rejoin non-numstat lines with the header.
+  const bodyLines: string[] = [];
+  const actualNumstat: string[] = [];
+
+  for (const line of numstatLines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      // blank lines before numstat are part of body
+      if (actualNumstat.length === 0) bodyLines.push('');
+      continue;
+    }
+    if (NUMSTAT_RE.test(trimmed)) {
+      actualNumstat.push(trimmed);
+    } else {
+      // Non-numstat lines are continuation of header/body
+      bodyLines.push(line);
+    }
+  }
+
+  // Rejoin header with body continuation lines
+  const fullHeader = bodyLines.length > 0
+    ? headerLine + '\n' + bodyLines.join('\n')
+    : headerLine;
+
+  const fields = fullHeader.split('\x00');
   if (fields.length < 8) return null;
 
   const [sha, author, email, date, subject, body, parentStr, refs] = fields;
@@ -89,10 +116,8 @@ function parseCommitBlock(headerLine: string, numstatLines: string[]): GitCommit
   const parents = parentStr.trim() ? parentStr.trim().split(' ') : [];
   const files: GitFileChange[] = [];
 
-  for (const line of numstatLines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const change = parseNumstatLine(trimmed);
+  for (const line of actualNumstat) {
+    const change = parseNumstatLine(line);
     if (change) files.push(change);
   }
 

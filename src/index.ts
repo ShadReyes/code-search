@@ -15,6 +15,8 @@ import { RubyPlugin } from './lang/ruby/index.js';
 import { indexGitFull, indexGitIncremental } from './git/indexer.js';
 import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
 import { explain, formatExplainResult } from './git/cross-ref.js';
+import { analyzeFullPipeline, analyzeIncrementalPipeline } from './signals/indexer.js';
+import { assess, formatAssessResult } from './assess.js';
 
 registry.register(new TypeScriptPlugin());
 registry.register(new PythonPlugin());
@@ -221,6 +223,9 @@ program
   .option('--author <name>', 'Filter by author name')
   .option('--file <path>', 'Filter by file path')
   .option('--type <type>', 'Filter by commit type (feat, fix, refactor, ...)')
+  .option('--before <date>', 'Filter commits before date (ISO 8601)')
+  .option('--sort <order>', 'Sort order: relevance (default) or date', 'relevance')
+  .option('--unique-commits', 'Show only one result per commit (highest scoring)')
   .option('--limit <n>', 'Maximum number of results', parseInt)
   .option('--format <type>', 'Output format: text or json', 'text')
   .option('--verbose', 'Show detailed output')
@@ -230,15 +235,18 @@ program
       const config = loadConfig(repoRoot, opts.verbose);
       const results = await searchGitHistoryQuery(query, repoRoot, config, {
         after: opts.after,
+        before: opts.before,
         author: opts.author,
         file: opts.file,
         type: opts.type,
         limit: opts.limit,
+        sort: opts.sort,
+        uniqueCommits: opts.uniqueCommits,
       });
       if (opts.format === 'json') {
         console.log(JSON.stringify({ query, results }, null, 2));
       } else {
-        console.log(formatGitResults(results, query));
+        console.log(formatGitResults(results, query, opts.sort));
       }
     } catch (err) {
       const msg = formatError(err);
@@ -302,6 +310,75 @@ program
       }
     } catch (err) {
       console.error(chalk.red(`\nExplain failed:\n${formatError(err)}`));
+      process.exit(1);
+    }
+  });
+
+// --- Signal Analysis Commands ---
+
+program
+  .command('analyze')
+  .description('Detect patterns and signals from git history')
+  .option('--full', 'Force a full re-analysis (default: incremental)')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--provider <name>', 'Embedding provider: ollama or openai')
+  .option('--model <name>', 'Embedding model name')
+  .option('--verbose', 'Show detailed output')
+  .action(async (opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      if (opts.provider) config.embeddingProvider = opts.provider;
+      if (opts.model) config.embeddingModel = opts.model;
+      if (opts.full) {
+        await analyzeFullPipeline(repoRoot, config, opts.verbose);
+      } else {
+        await analyzeIncrementalPipeline(repoRoot, config, opts.verbose);
+      }
+    } catch (err) {
+      console.error(chalk.red(`\nAnalysis failed:\n${formatError(err)}`));
+      if (formatError(err).includes('git history')) {
+        console.error(chalk.dim('\nTip: Run git-index first:\n  cortex-recall git-index --full --repo <path>'));
+      }
+      process.exit(1);
+    }
+  });
+
+program
+  .command('assess')
+  .description('Get judgment and warnings for files you plan to modify')
+  .option('--files <paths>', 'Comma-separated file paths to assess')
+  .option('--change-type <type>', 'Type of change: feat, fix, refactor, etc.')
+  .option('--query <text>', 'Optional natural language context for the change')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--format <type>', 'Output format: text or json', 'text')
+  .option('--verbose', 'Show detailed output')
+  .action(async (opts) => {
+    if (!opts.files) {
+      console.error(chalk.red('Error: --files is required.\n  Usage: cortex-recall assess --files src/foo.ts,src/bar.ts'));
+      process.exit(1);
+    }
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      const files = opts.files.split(',').map((f: string) => f.trim());
+      const result = await assess(files, repoRoot, config, {
+        changeType: opts.changeType,
+        query: opts.query,
+        verbose: opts.verbose,
+        format: opts.format,
+      });
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(formatAssessResult(result));
+      }
+    } catch (err) {
+      const msg = formatError(err);
+      console.error(chalk.red(`\nAssess failed:\n${msg}`));
+      if (msg.includes('signal') || msg.includes('profile')) {
+        console.error(chalk.dim('\nTip: Run analyze first:\n  cortex-recall analyze --full --repo <path>'));
+      }
       process.exit(1);
     }
   });

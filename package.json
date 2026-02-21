@@ -32,7 +32,8 @@
     "node": ">=22.0.0"
   },
   "bin": {
-    "cortex-recall": "./dist/index.js"
+    "cortex-recall": "./dist/index.js",
+    "cortex-recall-mcp": "./dist/mcp.js"
   },
   "files": [
     "dist/**",
@@ -53,6 +54,7 @@
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.26.2",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "glob": "^11.0.1",
