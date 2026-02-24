@@ -13,6 +13,12 @@ export class ChurnDetector implements SignalDetector {
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
 
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of commits) {
+      if (c.chunk_type === 'commit_summary') shaClass.set(c.sha, c.decision_class);
+    }
+
     // Count changes per file from file_diff chunks
     const fileCounts = new Map<string, { count: number; dates: string[]; shas: Set<string> }>();
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
@@ -69,6 +75,14 @@ export class ChurnDetector implements SignalDetector {
 
       const dir = dirname(filePath);
 
+      // Compute dominant decision_class
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of entry.shas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       signals.push({
         id: signalId('churn_hotspot', filePath),
         type: 'churn_hotspot',
@@ -89,6 +103,7 @@ export class ChurnDetector implements SignalDetector {
           trend,
           recent_30d: recent,
           previous_30d: previous,
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });

@@ -48,7 +48,7 @@ function saveAnalyzeState(state: AnalyzeState): void {
   writeFileSync(getAnalyzeStatePath(), JSON.stringify(state, null, 2));
 }
 
-async function loadAllGitHistory(storeUri?: string): Promise<GitHistoryChunk[]> {
+async function loadAllGitHistory(storeUri?: string, maxChunks?: number): Promise<GitHistoryChunk[]> {
   const dbPath = storeUri
     || process.env.CORTEX_RECALL_STORE_URI
     || `${TOOL_ROOT}/.lance`;
@@ -56,6 +56,7 @@ async function loadAllGitHistory(storeUri?: string): Promise<GitHistoryChunk[]> 
   const tableNames = await db.tableNames();
   if (!tableNames.includes('git_history')) return [];
 
+  const limit = maxChunks || 200000;
   const table = await db.openTable('git_history');
   const rows = await table.query()
     .select([
@@ -63,9 +64,10 @@ async function loadAllGitHistory(storeUri?: string): Promise<GitHistoryChunk[]> 
       'chunk_type', 'commit_type', 'scope', 'file_path', 'text',
       'files_changed', 'additions', 'deletions', 'branch', 'decision_class',
     ])
+    .limit(limit)
     .toArray();
 
-  return rows.map((row: Record<string, unknown>) => ({
+  const result = rows.map((row: Record<string, unknown>) => ({
     id: row.id as string,
     sha: row.sha as string,
     author: row.author as string,
@@ -84,6 +86,12 @@ async function loadAllGitHistory(storeUri?: string): Promise<GitHistoryChunk[]> 
     branch: row.branch as string,
     decision_class: (row.decision_class as GitHistoryChunk['decision_class']) || 'unknown',
   }));
+
+  if (result.length === limit) {
+    console.log(chalk.yellow(`Warning: analysis truncated to ${limit} chunks. Results may be incomplete for very large repos.`));
+  }
+
+  return result;
 }
 
 function computeFileProfiles(
@@ -225,7 +233,7 @@ export async function analyzeFullPipeline(
 
   // Step 1: Load all git history
   console.log(chalk.dim('Loading git history from index...'));
-  const allCommits = await loadAllGitHistory(config.storeUri);
+  const allCommits = await loadAllGitHistory(config.storeUri, config.maxAnalyzeChunks);
 
   if (allCommits.length === 0) {
     console.error(chalk.red('No git history found. Run git-index first.'));
@@ -334,7 +342,7 @@ export async function analyzeIncrementalPipeline(
   // but we can skip full-history detectors (revert, fix-chain)
   console.log(chalk.blue(`Starting incremental analysis (since ${state.lastAnalyzedCommit.slice(0, 8)})...`));
 
-  const allCommits = await loadAllGitHistory(config.storeUri);
+  const allCommits = await loadAllGitHistory(config.storeUri, config.maxAnalyzeChunks);
   if (allCommits.length === 0) {
     console.log(chalk.green('No git history found.'));
     return;

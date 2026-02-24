@@ -1,7 +1,7 @@
 # cortex-recall Development Guide
 
 ## Project Overview
-Semantic code + git history search CLI with a **judgment layer** that detects patterns, computes risk, and produces actionable warnings. Tree-sitter parsing → pluggable embeddings → LanceDB vector store → signal detection → warning synthesis. Supports local (Ollama) and remote (OpenAI-compatible) embedding providers, local or remote (S3/GCS) storage, text or JSON output, and MCP server integration with Claude Code.
+Semantic code + git history search CLI with a **signal detection layer** that detects patterns, computes risk, and produces actionable warnings. Tree-sitter parsing → pluggable embeddings → LanceDB vector store → signal detection → warning synthesis. Supports local (Ollama) and remote (OpenAI-compatible) embedding providers, local or remote (S3/GCS) storage, text or JSON output, and MCP server integration with Claude Code.
 
 ## Tech Stack
 - **Runtime:** Node 22, ESM (`"type": "module"`)
@@ -48,8 +48,8 @@ Semantic code + git history search CLI with a **judgment layer** that detects pa
 | `src/git/indexer.ts` | Git history index pipeline |
 | `src/git/search.ts` | Semantic vector search with metadata filters, sort, dedup |
 | `src/git/cross-ref.ts` | Code ↔ git cross-referencing; `explain()` returns `ExplainResult` |
-| **Signal Detection (Judgment Layer)** | |
-| `src/signals/types.ts` | `SignalRecord`, `FileProfile`, `Warning`, `JudgmentResult` interfaces |
+| **Signal Detection** | |
+| `src/signals/types.ts` | `SignalRecord`, `FileProfile`, `Warning`, `AssessmentResult` interfaces |
 | `src/signals/detector.ts` | `DetectorPipeline` orchestrator |
 | `src/signals/detectors/revert.ts` | Finds revert pairs and time-to-revert |
 | `src/signals/detectors/churn.ts` | Identifies file churn hotspots (>2σ above mean) |
@@ -61,7 +61,7 @@ Semantic code + git history search CLI with a **judgment layer** that detects pa
 | `src/signals/store.ts` | LanceDB CRUD for `signals` + `file_profiles` tables |
 | `src/signals/synthesizer.ts` | Warning synthesis rules + temporal decay scoring |
 | `src/signals/indexer.ts` | `analyze` pipeline: loads git history → runs detectors → stores signals + profiles |
-| **Judgment** | |
+| **Signal Detection** | |
 | `src/assess.ts` | `assess()` function: file profile lookup → signal retrieval → warning synthesis |
 | `src/mcp.ts` | MCP server: exposes `cortex_assess`, `cortex_search`, `cortex_git_search`, `cortex_explain`, `cortex_file_profile` |
 
@@ -145,7 +145,7 @@ Each `GitHistoryChunk` carries a `decision_class` tag:
 ## MCP Server Tools
 | Tool | Purpose | When Claude should use it |
 |------|---------|--------------------------|
-| `cortex_assess` | Full judgment with warnings | Before planning changes to a file/module |
+| `cortex_assess` | Full assessment with warnings | Before planning changes to a file/module |
 | `cortex_search` | Semantic code search | Understanding current code |
 | `cortex_git_search` | Semantic git history search | Understanding why code is the way it is |
 | `cortex_explain` | Cross-reference (code + history) | Deep-dive on a specific symbol/concept |
@@ -180,7 +180,7 @@ createProvider(config) → OllamaProvider | OpenAIProvider
 - Git embedder uses `search_document:` prefix at index, `search_query:` at query (nomic-embed-text optimization; ignored by OpenAI provider)
 - Git extractor streams commits — never loads all into memory
 - `explain()` returns `ExplainResult` struct — CLI formats via `formatExplainResult()` (text) or `JSON.stringify` (json)
-- `assess()` returns `JudgmentResult` — CLI formats via `formatAssessResult()` (text) or `JSON.stringify` (json)
+- `assess()` returns `AssessmentResult` — CLI formats via `formatAssessResult()` (text) or `JSON.stringify` (json)
 - Signal detectors run on GitHistoryChunk arrays (commit_summary + file_diff), sorted by date
 - `analyze` must run after `git-index` — it reads from the git_history table
 - `assess` must run after `analyze` — it reads from signals + file_profiles tables

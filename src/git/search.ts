@@ -18,6 +18,7 @@ interface SearchOptions {
   author?: string;
   file?: string;
   type?: string;
+  decisionClass?: 'decision' | 'routine' | 'unknown';
   limit?: number;
   sort?: 'relevance' | 'date';
   uniqueCommits?: boolean;
@@ -111,6 +112,7 @@ function buildWhereFilters(params?: {
   author?: string;
   file?: string;
   type?: string;
+  decisionClass?: string;
 }): string | null {
   if (!params) return null;
   const parts: string[] = [];
@@ -119,5 +121,6 @@ function buildWhereFilters(params?: {
   if (params.author) parts.push(`author = '${escapeSql(params.author)}'`);
   if (params.file) parts.push(`file_path = '${escapeSql(params.file)}'`);
   if (params.type) parts.push(`commit_type = '${escapeSql(params.type)}'`);
+  if (params.decisionClass) parts.push(`decision_class = '${escapeSql(params.decisionClass)}'`);
   return parts.length > 0 ? parts.join(' AND ') : null;
 }

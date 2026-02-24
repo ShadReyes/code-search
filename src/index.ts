@@ -223,6 +223,7 @@ program
   .option('--author <name>', 'Filter by author name')
   .option('--file <path>', 'Filter by file path')
   .option('--type <type>', 'Filter by commit type (feat, fix, refactor, ...)')
+  .option('--decision-class <class>', 'Filter by decision class: decision, routine, or unknown')
   .option('--before <date>', 'Filter commits before date (ISO 8601)')
   .option('--sort <order>', 'Sort order: relevance (default) or date', 'relevance')
   .option('--unique-commits', 'Show only one result per commit (highest scoring)')
@@ -239,6 +240,7 @@ program
         author: opts.author,
         file: opts.file,
         type: opts.type,
+        decisionClass: opts.decisionClass,
         limit: opts.limit,
         sort: opts.sort,
         uniqueCommits: opts.uniqueCommits,
@@ -346,7 +348,7 @@ program
 
 program
   .command('assess')
-  .description('Get judgment and warnings for files you plan to modify')
+  .description('Get assessment and warnings for files you plan to modify')
   .option('--files <paths>', 'Comma-separated file paths to assess')
   .option('--change-type <type>', 'Type of change: feat, fix, refactor, etc.')
   .option('--query <text>', 'Optional natural language context for the change')

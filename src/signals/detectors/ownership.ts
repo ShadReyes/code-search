@@ -19,6 +19,13 @@ export class OwnershipDetector implements SignalDetector {
 
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
+
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of commits) {
+      if (c.chunk_type === 'commit_summary') shaClass.set(c.sha, c.decision_class);
+    }
+
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
 
     // Group by file and directory in a single pass
@@ -76,6 +83,14 @@ export class OwnershipDetector implements SignalDetector {
 
       const dir = dirname(filePath);
 
+      // Compute dominant decision_class
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of top.shas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       signals.push({
         id: signalId('ownership', filePath, top.author),
         type: 'ownership',
@@ -100,6 +115,7 @@ export class OwnershipDetector implements SignalDetector {
             percentage: Math.round((e.commits / totalCommits) * 100),
             commits: e.commits,
           })),
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });
@@ -116,6 +132,14 @@ export class OwnershipDetector implements SignalDetector {
       const percentage = Math.round((top.commits / totalCommits) * 100);
 
       if (percentage < 30) continue;
+
+      // Compute dominant decision_class for directory
+      const dirClassCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of top.shas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        dirClassCounts[cls]++;
+      }
+      const dirDominantDecisionClass = Object.entries(dirClassCounts).sort((a, b) => b[1] - a[1])[0][0];
 
       signals.push({
         id: signalId('ownership', dir + '/', top.author),
@@ -141,6 +165,7 @@ export class OwnershipDetector implements SignalDetector {
             percentage: Math.round((e.commits / totalCommits) * 100),
             commits: e.commits,
           })),
+          dominant_decision_class: dirDominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });

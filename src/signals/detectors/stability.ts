@@ -14,6 +14,13 @@ export class StabilityShiftDetector implements SignalDetector {
 
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
+
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of commits) {
+      if (c.chunk_type === 'commit_summary') shaClass.set(c.sha, c.decision_class);
+    }
+
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
 
     if (fileDiffs.length === 0) return signals;
@@ -68,6 +75,14 @@ export class StabilityShiftDetector implements SignalDetector {
 
       if (!shift) continue;
 
+      // Compute dominant decision_class from recent SHAs
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of recentShas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       signals.push({
         id: signalId('stability_shift', dir),
         type: 'stability_shift',
@@ -87,6 +102,7 @@ export class StabilityShiftDetector implements SignalDetector {
           previous_30d: previous,
           older_30d: older,
           ratio: parseFloat(recentRatio.toFixed(2)),
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });

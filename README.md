@@ -1,6 +1,6 @@
 # cortex-recall
 
-Semantic code & git history search CLI with a **judgment layer** that detects patterns, computes risk, and produces actionable warnings. Primary consumer: Claude Code.
+Semantic code & git history search CLI with a **signal detection layer** that detects patterns, computes risk, and produces actionable warnings. Primary consumer: Claude Code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
@@ -10,7 +10,7 @@ Semantic code & git history search CLI with a **judgment layer** that detects pa
 - **Local + remote storage** — LanceDB on disk, or S3/GCS via URI
 - **JSON output** — `--format json` on all read commands for tool integration
 - **Git history search** — semantic search over commits, diffs, and cross-referenced code
-- **Judgment layer** — signal detection, file profiles, risk scoring, and actionable warnings
+- **Signal detection layer** — signal detection, file profiles, risk scoring, and actionable warnings
 - **MCP server** — integrates directly with Claude Code as a tool provider
 
 ## How It Works
@@ -19,7 +19,7 @@ cortex-recall has three layers:
 
 1. **Code Search** — tree-sitter parses source files into semantic chunks, embeds them, and stores in LanceDB for vector search
 2. **Git History** — commits are streamed, chunked (summary + per-file diffs), embedded, and indexed with metadata (author, date, type, decision class)
-3. **Judgment** — signal detectors scan git history for patterns (reverts, churn hotspots, ownership, fix cascades, adoption cycles, breaking changes), compute file profiles, and synthesize actionable warnings
+3. **Signal Detection** — signal detectors scan git history for patterns (reverts, churn hotspots, ownership, fix cascades, adoption cycles, breaking changes), compute file profiles, and synthesize actionable warnings
 
 ## Supported Languages
 
@@ -71,7 +71,7 @@ npx tsx src/index.ts query "authentication middleware" --repo /path/to/repo
 # 5. Search git history
 npx tsx src/index.ts git-search "why did we switch providers" --repo /path/to/repo
 
-# 6. Get judgment before modifying files
+# 6. Get assessment before modifying files
 npx tsx src/index.ts assess --files src/payments/checkout.ts --change-type refactor --repo /path/to/repo
 ```
 
@@ -126,13 +126,13 @@ npx tsx src/index.ts explain "authenticateUser" --repo /path/to/repo
 npx tsx src/index.ts git-stats --repo /path/to/repo
 ```
 
-### Signal Analysis & Judgment
+### Signal Analysis & Assessment
 
 ```bash
 # Detect patterns from git history (requires git-index)
 npx tsx src/index.ts analyze --full --repo /path/to/repo
 
-# Get judgment for files you plan to modify (requires analyze)
+# Get assessment for files you plan to modify (requires analyze)
 npx tsx src/index.ts assess --files src/payments/checkout.ts,src/payments/processor.ts --repo /path/to/repo
 
 # With change type context
@@ -198,7 +198,7 @@ Add to your Claude Code MCP settings (`~/.claude/claude_desktop_config.json` or 
 
 | Tool | Purpose | When to use |
 |------|---------|-------------|
-| `cortex_assess` | Full judgment with warnings | Before planning changes to a file/module |
+| `cortex_assess` | Full assessment with warnings | Before planning changes to a file/module |
 | `cortex_search` | Semantic code search | Understanding current code |
 | `cortex_git_search` | Semantic git history search | Understanding why code is the way it is |
 | `cortex_explain` | Cross-reference (code + history) | Deep-dive on a specific symbol/concept |
@@ -240,7 +240,7 @@ src/
   store.ts            LanceDB vector store (chunks + git_history)
   indexer.ts           Full + incremental code indexing
   search.ts           Code query embedding + vector search
-  assess.ts           Judgment: file profiles → signals → warnings
+  assess.ts           Assessment: file profiles → signals → warnings
   mcp.ts              MCP server entry point
   embeddings/
     provider.ts       EmbeddingProvider interface + factory
@@ -259,7 +259,7 @@ src/
     search.ts         Semantic search with filters, sort, dedup
     cross-ref.ts      Code ↔ git cross-referencing (explain)
   signals/
-    types.ts          SignalRecord, FileProfile, Warning, JudgmentResult
+    types.ts          SignalRecord, FileProfile, Warning, AssessmentResult
     detector.ts       DetectorPipeline orchestrator
     store.ts          LanceDB CRUD for signals + file_profiles
     synthesizer.ts    Warning synthesis rules + temporal decay

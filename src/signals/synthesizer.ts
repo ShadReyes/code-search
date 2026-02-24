@@ -15,6 +15,13 @@ function decayForSignal(signal: SignalRecord): number {
   return temporalDecay(signal.temporal_scope.end, halfLife);
 }
 
+function decisionWeight(metadata: Record<string, unknown>): number {
+  const cls = metadata.dominant_decision_class;
+  if (cls === 'decision') return 1.5;
+  if (cls === 'routine') return 0.5;
+  return 1.0;
+}
+
 /**
  * Synthesize warnings from file profiles and signals.
  * Returns sorted warnings (warning > caution > info).
@@ -67,7 +74,8 @@ export function synthesizeWarnings(
   // --- Pattern warnings from signals ---
   for (const signal of signals) {
     const decay = decayForSignal(signal);
-    if (decay < 0.1) continue; // too old to matter
+    const weight = decisionWeight(signal.metadata);
+    if (decay * weight < 0.1) continue; // too old or too routine to matter
 
     switch (signal.type) {
       case 'revert_pair': {

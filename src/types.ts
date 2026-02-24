@@ -106,6 +106,7 @@ export interface CodeSearchConfig {
   embeddingBatchSize: number;
   searchLimit: number;
   storeUri?: string;
+  maxAnalyzeChunks?: number;
   git?: GitConfig;
 }
 
@@ -144,6 +145,7 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
   embeddingModel: 'nomic-embed-text',
   embeddingBatchSize: 50,
   searchLimit: 5,
+  maxAnalyzeChunks: 200000,
   git: {
     includeFileChunks: true,
     includeMergeGroups: true,

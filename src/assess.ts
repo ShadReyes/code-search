@@ -1,7 +1,7 @@
 import { dirname } from 'node:path';
 import chalk from 'chalk';
 import type { CodeSearchConfig } from './types.js';
-import type { JudgmentResult, Warning, FileProfile, SignalRecord } from './signals/types.js';
+import type { AssessmentResult, Warning, FileProfile, SignalRecord } from './signals/types.js';
 import { initStore, initGitHistoryTable, searchGitHistory, search } from './store.js';
 import {
   initSignalsStore,
@@ -27,7 +27,7 @@ export async function assess(
   repoPath: string,
   config: CodeSearchConfig,
   options?: AssessOptions,
-): Promise<JudgmentResult> {
+): Promise<AssessmentResult> {
   const verbose = options?.verbose ?? false;
 
   // Initialize stores
@@ -124,7 +124,7 @@ export async function assess(
   };
 }
 
-export function formatAssessResult(result: JudgmentResult): string {
+export function formatAssessResult(result: AssessmentResult): string {
   const lines: string[] = [];
 
   if (result.warnings.length === 0) {

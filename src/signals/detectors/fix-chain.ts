@@ -26,6 +26,10 @@ export class FixAfterFeatureDetector implements SignalDetector {
     const summaries = commits.filter(c => c.chunk_type === 'commit_summary');
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
 
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of summaries) shaClass.set(c.sha, c.decision_class);
+
     // Build a map of SHA -> files touched
     const shaFiles = new Map<string, Set<string>>();
     for (const chunk of fileDiffs) {
@@ -84,6 +88,15 @@ export class FixAfterFeatureDetector implements SignalDetector {
       );
 
       const allShas = [feat.sha, ...fixChain.map(c => c.sha)];
+
+      // Compute dominant decision_class
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of allShas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       // Collect all affected files from the fix chain
       const affectedFiles = new Set<string>();
       for (const sha of allShas) {
@@ -118,6 +131,7 @@ export class FixAfterFeatureDetector implements SignalDetector {
           affected_files: [...affectedFiles],
           fix_shas: fixChain.map(c => c.sha),
           fix_subjects: fixChain.map(c => c.subject),
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });

@@ -52,7 +52,7 @@ export interface Warning {
   evidence: string[]; // SHAs
 }
 
-export interface JudgmentResult {
+export interface AssessmentResult {
   warnings: Warning[];
   file_profiles: FileProfile[];
   signals: SignalRecord[];

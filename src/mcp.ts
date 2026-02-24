@@ -31,7 +31,7 @@ function getRepoPath(repo?: string): string {
 // --- Tool: cortex_assess ---
 server.tool(
   'cortex_assess',
-  'Get judgment and warnings for files you plan to modify. Returns stability warnings, ownership info, pattern alerts, and risk scores.',
+  'Get assessment and warnings for files you plan to modify. Returns stability warnings, ownership info, pattern alerts, and risk scores.',
   {
     files: z.array(z.string()).describe('File paths to assess (relative to repo root)'),
     change_type: z.string().optional().describe('Type of change: feat, fix, refactor, etc.'),
@@ -77,16 +77,17 @@ server.tool(
     author: z.string().optional().describe('Filter by author name'),
     file: z.string().optional().describe('Filter by file path'),
     type: z.string().optional().describe('Filter by commit type (feat, fix, refactor)'),
+    decision_class: z.enum(['decision', 'routine', 'unknown']).optional().describe('Filter by decision class'),
     limit: z.number().optional().describe('Maximum results (default 10)'),
     sort: z.enum(['relevance', 'date']).optional().describe('Sort order'),
     unique_commits: z.boolean().optional().describe('One result per commit'),
     repo: z.string().optional().describe('Repository root path'),
   },
-  async ({ query, after, before, author, file, type, limit, sort, unique_commits, repo }) => {
+  async ({ query, after, before, author, file, type, decision_class, limit, sort, unique_commits, repo }) => {
     const repoPath = getRepoPath(repo);
     const config = loadConfig(repoPath, false);
     const results = await searchGitHistoryQuery(query, repoPath, config, {
-      after, before, author, file, type, limit, sort,
+      after, before, author, file, type, decisionClass: decision_class, limit, sort,
       uniqueCommits: unique_commits,
     });
     return { content: [{ type: 'text', text: JSON.stringify({ query, results }, null, 2) }] };

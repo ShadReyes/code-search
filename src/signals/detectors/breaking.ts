@@ -27,6 +27,10 @@ export class BreakingChangeDetector implements SignalDetector {
     const summaries = commits.filter(c => c.chunk_type === 'commit_summary');
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
 
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of summaries) shaClass.set(c.sha, c.decision_class);
+
     // Build SHA -> files and SHA -> author maps
     const shaFiles = new Map<string, Set<string>>();
     const shaAuthor = new Map<string, string>();
@@ -103,6 +107,15 @@ export class BreakingChangeDetector implements SignalDetector {
       }
 
       const allShas = [commit.sha, ...fixResponses.map(f => f.sha)];
+
+      // Compute dominant decision_class
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of allShas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       const dirs = new Set([...allAffectedFiles].map(f => dirname(f)));
       const dirScope = dirs.size === 1 ? [...dirs][0] : [...dirs][0];
 
@@ -127,6 +140,7 @@ export class BreakingChangeDetector implements SignalDetector {
           affected_files: allAffectedFiles.size,
           fix_authors: [...fixAuthors],
           fix_shas: fixResponses.map(f => f.sha),
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });

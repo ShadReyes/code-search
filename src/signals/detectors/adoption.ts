@@ -12,6 +12,12 @@ export class AdoptionCycleDetector implements SignalDetector {
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
 
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of commits) {
+      if (c.chunk_type === 'commit_summary') shaClass.set(c.sha, c.decision_class);
+    }
+
     // Look at file_diff chunks that touch package.json or config files
     const configDiffs = commits.filter(c =>
       c.chunk_type === 'file_diff' &&
@@ -65,6 +71,14 @@ export class AdoptionCycleDetector implements SignalDetector {
       const currentStatus = lastEvent.event === 'add' ? 'active' : 'removed';
       const cycleCount = Math.ceil(transitions / 2);
 
+      // Compute dominant decision_class
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const e of events) {
+        const cls = shaClass.get(e.sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       signals.push({
         id: signalId('adoption_cycle', dep),
         type: 'adoption_cycle',
@@ -83,6 +97,7 @@ export class AdoptionCycleDetector implements SignalDetector {
           transitions,
           current_status: currentStatus,
           events: events.map(e => ({ event: e.event, date: e.date, sha: e.sha.slice(0, 7) })),
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });

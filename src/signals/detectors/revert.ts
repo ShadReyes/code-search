@@ -27,6 +27,10 @@ export class RevertDetector implements SignalDetector {
     // Only look at commit_summary chunks
     const summaries = commits.filter(c => c.chunk_type === 'commit_summary');
 
+    // Build SHA → decision_class map for dominant class computation
+    const shaClass = new Map<string, GitHistoryChunk['decision_class']>();
+    for (const c of summaries) shaClass.set(c.sha, c.decision_class);
+
     // Build SHA → file paths map from file_diff chunks
     const shaFiles = new Map<string, string[]>();
     for (const c of commits) {
@@ -98,6 +102,15 @@ export class RevertDetector implements SignalDetector {
         : null;
 
       const shas = original ? [original.sha, commit.sha] : [commit.sha];
+
+      // Compute dominant decision_class
+      const classCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };
+      for (const sha of shas) {
+        const cls = shaClass.get(sha) || 'unknown';
+        classCounts[cls]++;
+      }
+      const dominantDecisionClass = Object.entries(classCounts).sort((a, b) => b[1] - a[1])[0][0];
+
       const affectedFiles = originalSha ? (shaFiles.get(originalSha) || []) : [];
       const dirScope = affectedFiles.length > 0
         ? commonDirectory(affectedFiles)
@@ -126,6 +139,7 @@ export class RevertDetector implements SignalDetector {
           original_subject: original?.subject ?? null,
           files_changed: original?.files_changed ?? commit.files_changed,
           affected_files: affectedFiles,
+          dominant_decision_class: dominantDecisionClass,
         },
         created_at: new Date().toISOString(),
       });
