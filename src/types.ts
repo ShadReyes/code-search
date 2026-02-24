@@ -36,6 +36,7 @@ export interface GitCommitRaw {
   parents: string[];
   refs: string;
   files: GitFileChange[];
+  diffs?: Map<string, string>;
 }
 
 export interface GitHistoryChunk {

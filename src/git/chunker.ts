@@ -142,9 +142,14 @@ export async function chunkCommit(
     decision_class,
   });
 
-  // 2. file_diff (if enabled) — batch diffs in one git call, parallel fallback
+  // 2. file_diff (if enabled) — prefer inline diffs from git log -p, fallback to git show
   if (config.includeFileChunks) {
-    let diffMap = await getCommitDiffs(repoPath, commit.sha, config.maxDiffLinesPerFile);
+    let diffMap = commit.diffs ?? new Map<string, string>();
+
+    // Fallback: batch diffs via git show
+    if (diffMap.size === 0 && commit.files.length > 0) {
+      diffMap = await getCommitDiffs(repoPath, commit.sha, config.maxDiffLinesPerFile);
+    }
 
     // Fallback: if batch approach returned nothing, fetch per-file in parallel (concurrency 5)
     if (diffMap.size === 0 && commit.files.length > 0) {

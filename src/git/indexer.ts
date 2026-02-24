@@ -84,7 +84,7 @@ export async function indexGitFull(
     batch.push(...enriched);
 
     // Flush batch every 20 chunks (git diff chunks are larger than code chunks)
-    if (batch.length >= 20) {
+    if (batch.length >= 100) {
       await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
       chunkCount += batch.length;
       isFirstBatch = false;
@@ -158,7 +158,7 @@ export async function indexGitIncremental(
       const enriched = chunks.map(c => enrichChunk(c, gitConfig));
       batch.push(...enriched);
 
-      if (batch.length >= 20) {
+      if (batch.length >= 100) {
         await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, false);
         chunkCount += batch.length;
         batch = [];
@@ -235,7 +235,7 @@ export async function indexGitRecent(
     const enriched = chunks.map(c => enrichChunk(c, gitConfig));
     batch.push(...enriched);
 
-    if (batch.length >= 20) {
+    if (batch.length >= 100) {
       await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
       chunkCount += batch.length;
       isFirstBatch = false;

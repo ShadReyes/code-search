@@ -129,15 +129,15 @@ describe('indexGitFull', () => {
     expect(insertGitChunks).toHaveBeenCalled();
   });
 
-  it('flushes batch at 20 chunks', async () => {
+  it('flushes batch at 100 chunks', async () => {
     const commit1 = { sha: 'aaa', subject: 'feat: first' };
     const commit2 = { sha: 'bbb', subject: 'feat: second' };
     vi.mocked(extractAllCommits).mockReturnValue(
       asyncIterFromArray([commit1, commit2]) as any,
     );
 
-    // First commit produces 20 chunks (triggers flush), second produces 1
-    const batch1 = Array.from({ length: 20 }, (_, i) => makeGitChunk(`c1-${i}`));
+    // First commit produces 100 chunks (triggers flush), second produces 1
+    const batch1 = Array.from({ length: 100 }, (_, i) => makeGitChunk(`c1-${i}`));
     const batch2 = [makeGitChunk('c2-0')];
     vi.mocked(chunkCommit)
       .mockResolvedValueOnce(batch1)
@@ -145,7 +145,7 @@ describe('indexGitFull', () => {
 
     await indexGitFull('/tmp/repo', testConfig as any, false);
 
-    // Batch of 20 flushed in the loop, remaining 1 flushed at the end
+    // Batch of 100 flushed in the loop, remaining 1 flushed at the end
     expect(insertGitChunks).toHaveBeenCalledTimes(2);
   });
 

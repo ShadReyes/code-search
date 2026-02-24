@@ -92,15 +92,29 @@ function parseNumstatLine(line: string): GitFileChange | null {
 
 const NUMSTAT_RE = /^(\d+|-)\t(\d+|-)\t.+/;
 
-function parseCommitBlock(headerLine: string, numstatLines: string[]): GitCommitRaw | null {
+function parseCommitBlock(headerLine: string, numstatLines: string[], maxDiffLinesPerFile: number): GitCommitRaw | null {
   // Header: %H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x00%P%x00%D
   // The body (%b) can be multi-line, so \x00 delimiters for parents/refs
   // may end up in numstatLines. Rejoin non-numstat lines with the header.
   const bodyLines: string[] = [];
   const actualNumstat: string[] = [];
+  const diffLines: string[] = [];
+  let inDiff = false;
 
   for (const line of numstatLines) {
     const trimmed = line.trim();
+
+    if (trimmed.startsWith('diff --git ')) {
+      inDiff = true;
+      diffLines.push(line);
+      continue;
+    }
+
+    if (inDiff) {
+      diffLines.push(line);
+      continue;
+    }
+
     if (!trimmed) {
       // blank lines before numstat are part of body
       if (actualNumstat.length === 0) bodyLines.push('');
@@ -132,6 +146,38 @@ function parseCommitBlock(headerLine: string, numstatLines: string[]): GitCommit
     if (change) files.push(change);
   }
 
+  // Parse inline diffs into per-file Map
+  let diffs: Map<string, string> | undefined;
+  if (diffLines.length > 0) {
+    diffs = new Map();
+    const raw = diffLines.join('\n');
+    const parts = raw.split(/^diff --git a\//m);
+
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const newlineIdx = part.indexOf('\n');
+      if (newlineIdx === -1) continue;
+
+      const header = part.slice(0, newlineIdx);
+      const bIdx = header.indexOf(' b/');
+      const filePath = bIdx !== -1 ? header.slice(bIdx + 3) : header.split(' ')[0];
+
+      const diffBody = 'diff --git a/' + part;
+
+      if (diffBody.includes('Binary files')) {
+        diffs.set(filePath, '[binary file]');
+        continue;
+      }
+
+      const lines = diffBody.split('\n');
+      if (lines.length > maxDiffLinesPerFile) {
+        diffs.set(filePath, lines.slice(0, maxDiffLinesPerFile).join('\n') + `\n... truncated (${lines.length - maxDiffLinesPerFile} more lines)`);
+      } else {
+        diffs.set(filePath, diffBody);
+      }
+    }
+  }
+
   return {
     sha,
     author,
@@ -142,6 +188,7 @@ function parseCommitBlock(headerLine: string, numstatLines: string[]): GitCommit
     parents,
     refs: refs ?? '',
     files,
+    diffs,
   };
 }
 
@@ -172,7 +219,7 @@ async function* streamCommits(
     if (cleaned.startsWith(COMMIT_SEP)) {
       // Flush previous commit
       if (currentHeader !== null) {
-        const commit = parseCommitBlock(currentHeader, numstatLines);
+        const commit = parseCommitBlock(currentHeader, numstatLines, config.maxDiffLinesPerFile);
         if (commit && !shouldSkipCommit(commit, config, compiledPatterns)) {
           yield commit;
           commitCount++;
@@ -198,7 +245,7 @@ async function* streamCommits(
 
   // Flush last commit
   if (currentHeader !== null) {
-    const commit = parseCommitBlock(currentHeader, numstatLines);
+    const commit = parseCommitBlock(currentHeader, numstatLines, config.maxDiffLinesPerFile);
     if (commit && !shouldSkipCommit(commit, config, compiledPatterns)) {
       if (config.maxCommits === 0 || commitCount < config.maxCommits) {
         yield commit;
@@ -231,6 +278,7 @@ export async function* extractAllCommits(
     '--all',
     `--format=${COMMIT_SEP}%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x00%P%x00%D`,
     '--numstat',
+    '-p',
   ];
 
   yield* streamCommits(repoPath, args, config);
@@ -246,6 +294,7 @@ export async function* extractCommitsSince(
     `${sinceCommit}..HEAD`,
     `--format=${COMMIT_SEP}%x00%H%x00%an%x00%ae%x00%aI%x00%s%x00%b%x00%P%x00%D`,
     '--numstat',
+    '-p',
   ];
 
   yield* streamCommits(repoPath, args, config);
