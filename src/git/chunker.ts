@@ -159,8 +159,13 @@ export async function chunkCommit(
       }
     }
 
+    const maxDiffChars = config.maxDiffCharsPerFile ?? 3000;
+
     for (const file of commit.files) {
-      const diff = diffMap.get(file.path) ?? '';
+      const rawDiff = diffMap.get(file.path) ?? '';
+      const diff = rawDiff.length > maxDiffChars
+        ? rawDiff.slice(0, maxDiffChars) + `\n... truncated (${rawDiff.length - maxDiffChars} more chars)`
+        : rawDiff;
       const text = diff
         ? `search_document: Diff for ${file.path} in commit ${commit.sha.slice(0, 8)} by ${commit.author}:\n${diff}`
         : `search_document: ${file.path} changed (+${file.additions}/-${file.deletions}) in commit ${commit.sha.slice(0, 8)} by ${commit.author}`;

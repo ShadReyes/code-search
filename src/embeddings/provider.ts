@@ -4,6 +4,7 @@ import { OpenAIProvider } from './openai.js';
 
 export interface EmbedBatchOptions {
   batchSize?: number;
+  maxBatchChars?: number;
   dimension?: number;
   verbose?: boolean;
   prefix?: string;

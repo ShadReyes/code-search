@@ -62,51 +62,52 @@ export class OpenAIProvider implements EmbeddingProvider {
 
   async embedBatch(texts: string[], opts: EmbedBatchOptions): Promise<number[][]> {
     const batchSize = opts.batchSize ?? 50;
+    const maxBatchChars = opts.maxBatchChars ?? 300_000;
     const dimension = opts.dimension ?? 0;
     const verbose = opts.verbose ?? false;
     // prefix is silently ignored for OpenAI
     const concurrency = opts.concurrency ?? 3;
 
-    const totalBatches = Math.ceil(texts.length / batchSize);
+    // Prepare all texts upfront (truncate)
+    const prepared = texts.map(truncateForEmbedding);
+
+    // Build batches by both count AND character budget
+    const batchTasks: Array<{ index: number; start: number; end: number; batch: string[] }> = [];
+    let batchStart = 0;
+    let currentChars = 0;
+    let currentBatch: string[] = [];
+
+    for (let i = 0; i < prepared.length; i++) {
+      const textLen = prepared[i].length;
+      if (currentBatch.length > 0 && (currentChars + textLen > maxBatchChars || currentBatch.length >= batchSize)) {
+        batchTasks.push({ index: batchTasks.length, start: batchStart, end: i, batch: currentBatch });
+        currentBatch = [];
+        currentChars = 0;
+        batchStart = i;
+      }
+      currentBatch.push(prepared[i]);
+      currentChars += textLen;
+    }
+    if (currentBatch.length > 0) {
+      batchTasks.push({ index: batchTasks.length, start: batchStart, end: prepared.length, batch: currentBatch });
+    }
+
+    const totalBatches = batchTasks.length;
     const allEmbeddings: number[][] = new Array(texts.length);
     let fallbackCount = 0;
     let completedBatches = 0;
 
-    // Create batch tasks
-    const batchTasks: Array<{ index: number; start: number; end: number; batch: string[] }> = [];
-    for (let i = 0; i < texts.length; i += batchSize) {
-      const start = i;
-      const end = Math.min(i + batchSize, texts.length);
-      const batch = texts.slice(start, end).map(truncateForEmbedding);
-      batchTasks.push({ index: batchTasks.length, start, end, batch });
-    }
-
     // Process with concurrency limiter
     const processBatch = async (task: typeof batchTasks[0]) => {
-      const { start, end, batch } = task;
-      try {
-        const embeddings = await this.embedOneBatch(batch);
-        for (let j = 0; j < embeddings.length; j++) {
-          allEmbeddings[start + j] = embeddings[j];
-        }
-      } catch (err) {
-        if (verbose) {
-          console.log(chalk.yellow(
-            `\n  Batch ${task.index + 1} failed: ${err instanceof Error ? err.message : err}`
-          ));
-          console.log(chalk.yellow('  Falling back to individual embedding...'));
-        }
-        // Fallback: embed individually, but concurrently within the batch
-        const fallbackTasks = batch.map((text, j) => async () => {
-          const embedding = await this.embedSingleText(text, dimension, verbose);
-          allEmbeddings[start + j] = embedding;
-          fallbackCount++;
-        });
-        await runWithConcurrency(fallbackTasks, concurrency);
+      const { start, batch } = task;
+      const results = await this.embedBatchRecursive(batch, dimension, verbose);
+      for (let j = 0; j < results.embeddings.length; j++) {
+        allEmbeddings[start + j] = results.embeddings[j];
       }
+      fallbackCount += results.fallbackCount;
       completedBatches++;
       process.stdout.write(
-        `\r${chalk.dim(`Embedding batch ${completedBatches}/${totalBatches} (chunks ${end}/${texts.length})...`)}`
+        `\r${chalk.dim(`Embedding batch ${completedBatches}/${totalBatches} (chunks ${task.end}/${texts.length})...`)}`
       );
     };
 
@@ -118,6 +119,43 @@ export class OpenAIProvider implements EmbeddingProvider {
       console.log(chalk.yellow(`${fallbackCount} chunks required individual embedding (batch too large)`));
     }
     return allEmbeddings;
+  }
+
+  private async embedBatchRecursive(
+    texts: string[],
+    dimension: number,
+    verbose: boolean,
+  ): Promise<{ embeddings: number[][]; fallbackCount: number }> {
+    try {
+      const embeddings = await this.embedOneBatch(texts);
+      return { embeddings, fallbackCount: 0 };
+    } catch (err) {
+      if (texts.length > 1) {
+        // Binary split: retry each half
+        if (verbose) {
+          console.log(chalk.yellow(
+            `\n  Batch of ${texts.length} failed, splitting in half...`
+          ));
+        }
+        const mid = Math.ceil(texts.length / 2);
+        const [left, right] = await Promise.all([
+          this.embedBatchRecursive(texts.slice(0, mid), dimension, verbose),
+          this.embedBatchRecursive(texts.slice(mid), dimension, verbose),
+        ]);
+        return {
+          embeddings: [...left.embeddings, ...right.embeddings],
+          fallbackCount: left.fallbackCount + right.fallbackCount,
+        };
+      }
+      // Single text — progressive truncation
+      if (verbose) {
+        console.log(chalk.yellow(
+          `\n  Single text failed: ${err instanceof Error ? err.message : err}`
+        ));
+      }
+      const embedding = await this.embedSingleText(texts[0], dimension, verbose);
+      return { embeddings: [embedding], fallbackCount: 1 };
+    }
   }
 
   async embedSingle(text: string, _prefix?: string): Promise<number[]> {

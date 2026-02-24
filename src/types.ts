@@ -76,6 +76,7 @@ export interface GitConfig {
   includeFileChunks: boolean;
   includeMergeGroups: boolean;
   maxDiffLinesPerFile: number;
+  maxDiffCharsPerFile: number;
   enrichLowQualityMessages: boolean;
   lowQualityThreshold: number;
   skipBotAuthors: string[];
@@ -147,6 +148,7 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
     includeFileChunks: true,
     includeMergeGroups: true,
     maxDiffLinesPerFile: 50,
+    maxDiffCharsPerFile: 3000,
     enrichLowQualityMessages: true,
     lowQualityThreshold: 10,
     skipBotAuthors: ['dependabot', 'renovate', 'github-actions'],
