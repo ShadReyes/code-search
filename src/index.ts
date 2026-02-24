@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { writeFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { indexFull, indexIncremental, loadConfig } from './indexer.js';
+import { indexFull, indexIncremental, indexRecent, loadConfig } from './indexer.js';
 import { searchCode, formatResults } from './search.js';
 import { initStore, getStats, getGitStats, initGitHistoryTable } from './store.js';
 import { DEFAULT_CONFIG } from './types.js';
@@ -12,7 +12,7 @@ import { registry } from './lang/plugin.js';
 import { TypeScriptPlugin } from './lang/typescript/index.js';
 import { PythonPlugin } from './lang/python/index.js';
 import { RubyPlugin } from './lang/ruby/index.js';
-import { indexGitFull, indexGitIncremental } from './git/indexer.js';
+import { indexGitFull, indexGitIncremental, indexGitRecent } from './git/indexer.js';
 import { searchGitHistoryQuery, formatGitResults } from './git/search.js';
 import { explain, formatExplainResult } from './git/cross-ref.js';
 import { analyzeFullPipeline, analyzeIncrementalPipeline } from './signals/indexer.js';
@@ -71,6 +71,7 @@ program
   .command('index')
   .description('Index a repository for semantic search')
   .option('--full', 'Force a full re-index (default: incremental)')
+  .option('--recent', 'Index only files changed in the last 30 days')
   .option('--repo <path>', 'Path to the repository root')
   .option('--provider <name>', 'Embedding provider: ollama or openai')
   .option('--model <name>', 'Embedding model name')
@@ -81,7 +82,9 @@ program
       const config = loadConfig(repoRoot, opts.verbose);
       if (opts.provider) config.embeddingProvider = opts.provider;
       if (opts.model) config.embeddingModel = opts.model;
-      if (opts.full) {
+      if (opts.recent) {
+        await indexRecent(repoRoot, opts.verbose, config);
+      } else if (opts.full) {
         await indexFull(repoRoot, opts.verbose, config);
       } else {
         await indexIncremental(repoRoot, opts.verbose, config);
@@ -177,12 +180,67 @@ program
     console.log(chalk.dim('Edit this file to customize indexing behavior.'));
   });
 
+program
+  .command('setup')
+  .description('Run full indexing pipeline: code index → git history → signal analysis')
+  .option('--repo <path>', 'Path to the repository root')
+  .option('--provider <name>', 'Embedding provider: ollama or openai')
+  .option('--model <name>', 'Embedding model name')
+  .option('--max-commits <n>', 'Limit git history to the last N commits', parseInt)
+  .option('--recent', 'Index only recent changes (last 30 days)')
+  .option('--verbose', 'Show detailed output')
+  .action(async (opts) => {
+    const repoRoot = resolveRepo(opts.repo);
+    try {
+      const config = loadConfig(repoRoot, opts.verbose);
+      if (opts.provider) config.embeddingProvider = opts.provider;
+      if (opts.model) config.embeddingModel = opts.model;
+      if (opts.maxCommits !== undefined && config.git) {
+        config.git.maxCommits = opts.maxCommits;
+      }
+
+      console.log(chalk.blue.bold('cortex-recall setup'));
+      console.log(chalk.dim('Running full indexing pipeline...\n'));
+
+      // Step 1: Code index
+      console.log(chalk.blue('Step 1/3: Indexing code...'));
+      if (opts.recent) {
+        await indexRecent(repoRoot, opts.verbose, config);
+      } else {
+        await indexFull(repoRoot, opts.verbose, config);
+      }
+      console.log('');
+
+      // Step 2: Git history index
+      console.log(chalk.blue('Step 2/3: Indexing git history...'));
+      if (opts.recent) {
+        await indexGitRecent(repoRoot, config, opts.verbose);
+      } else {
+        await indexGitFull(repoRoot, config, opts.verbose);
+      }
+      console.log('');
+
+      // Step 3: Signal analysis
+      console.log(chalk.blue('Step 3/3: Analyzing patterns...'));
+      await analyzeFullPipeline(repoRoot, config, opts.verbose);
+      console.log('');
+
+      console.log(chalk.green.bold('Setup complete! You can now use:'));
+      console.log(chalk.dim('  cortex-recall query "search term" --repo ' + repoRoot));
+      console.log(chalk.dim('  cortex-recall assess --files src/foo.ts --repo ' + repoRoot));
+    } catch (err) {
+      console.error(chalk.red(`\nSetup failed:\n${formatError(err)}`));
+      process.exit(1);
+    }
+  });
+
 // --- Git History Commands ---
 
 program
   .command('git-index')
   .description('Index git history for semantic search')
   .option('--full', 'Force a full re-index (default: incremental)')
+  .option('--recent', 'Index only git history from the last 30 days')
   .option('--repo <path>', 'Path to the repository root')
   .option('--provider <name>', 'Embedding provider: ollama or openai')
   .option('--model <name>', 'Embedding model name')
@@ -201,7 +259,9 @@ program
         console.log(chalk.dim('Effective config:'));
         console.log(chalk.dim(JSON.stringify(config, null, 2)));
       }
-      if (opts.full) {
+      if (opts.recent) {
+        await indexGitRecent(repoRoot, config, opts.verbose);
+      } else if (opts.full) {
         await indexGitFull(repoRoot, config, opts.verbose);
       } else {
         await indexGitIncremental(repoRoot, config, opts.verbose);

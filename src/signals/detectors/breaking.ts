@@ -7,8 +7,6 @@ function signalId(type: string, ...parts: string[]): string {
   return createHash('sha256').update(type + parts.join(':')).digest('hex').slice(0, 16);
 }
 
-const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
-
 function upperBound(arr: number[], target: number): number {
   let lo = 0, hi = arr.length;
   while (lo < hi) {
@@ -21,6 +19,11 @@ function upperBound(arr: number[], target: number): number {
 
 export class BreakingChangeDetector implements SignalDetector {
   readonly name = 'breaking_change';
+  private readonly windowMs: number;
+
+  constructor(private config: { windowHours: number } = { windowHours: 48 }) {
+    this.windowMs = this.config.windowHours * 60 * 60 * 1000;
+  }
 
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
@@ -79,7 +82,7 @@ export class BreakingChangeDetector implements SignalDetector {
       for (let i = startIdx; i < fixSorted.length; i++) {
         const candidate = fixSorted[i];
         const candDate = fixTimestamps[i];
-        if (candDate - commitDate > FORTY_EIGHT_HOURS_MS) break;
+        if (candDate - commitDate > this.windowMs) break;
         if (candidate.author === commit.author) continue; // same author doesn't count
 
         const candFiles = shaFiles.get(candidate.sha);

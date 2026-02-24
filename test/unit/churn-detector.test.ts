@@ -182,6 +182,37 @@ describe('ChurnDetector', () => {
     expect(['increasing', 'decreasing', 'stable']).toContain(meta.trend);
   });
 
+  it('custom sigmaThreshold=1 flags more files than default', () => {
+    // With fileA=10 and 8 fillers at 1:
+    // mean=2, stddev~2.83
+    // Default threshold (2σ): mean + 2*2.83 = 7.66 → only fileA (10) is flagged
+    // Custom threshold (1σ): mean + 1*2.83 = 4.83 → only fileA (10) is flagged (fillers still below)
+    // Need a scenario where lowering sigma catches more:
+    // fileA=10, fileB=6, 6 fillers at 1 each → mean=3, stddev~3.0
+    // Default (2σ): threshold=9 → only fileA(10) flagged
+    // Custom (1σ): threshold=6 → fileA(10) and fileB(6) flagged (6 <= 6, not >, so we need 7)
+    // Actually: 6 > 6 is false. Let's use fileB=7.
+    // mean=(10+7+6)/8=3.625, stddev~2.82, threshold@1σ=6.45 → fileA(10) and fileB(7) flagged
+    // threshold@2σ=9.27 → only fileA(10) flagged
+    const fillers = Array.from({ length: 6 }, (_, i) =>
+      fileDiffs(`src/filler${i}.ts`, 1, `f${i}`),
+    ).flat();
+
+    const chunks: GitHistoryChunk[] = [
+      ...fileDiffs('src/a.ts', 10, 'a'),
+      ...fileDiffs('src/b.ts', 7, 'b'),
+      ...fillers,
+    ];
+
+    const defaultDetector = new ChurnDetector();
+    const looseDetector = new ChurnDetector({ sigmaThreshold: 1 });
+
+    const defaultSignals = defaultDetector.detect(chunks);
+    const looseSignals = looseDetector.detect(chunks);
+
+    expect(looseSignals.length).toBeGreaterThan(defaultSignals.length);
+  });
+
   it('results sorted by sigma descending', () => {
     // fileA: 50, fileB: 30, 30 fillers at 1
     // mean≈3.44, stddev≈9.76, threshold≈22.96 → both A(50) and B(30) exceed

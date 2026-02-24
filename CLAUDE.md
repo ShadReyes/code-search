@@ -1,7 +1,7 @@
 # cortex-recall Development Guide
 
 ## Project Overview
-Semantic code + git history search CLI with a **signal detection layer** that detects patterns, computes risk, and produces actionable warnings. Tree-sitter parsing → pluggable embeddings → LanceDB vector store → signal detection → warning synthesis. Supports local (Ollama) and remote (OpenAI-compatible) embedding providers, local or remote (S3/GCS) storage, text or JSON output, and MCP server integration with Claude Code.
+MCP-first pre-change risk intelligence CLI. Signal detection layer detects patterns, computes risk, and produces actionable warnings. Tree-sitter parsing → pluggable embeddings → LanceDB vector store → signal detection → warning synthesis. Supports local (Ollama) and remote (OpenAI-compatible) embedding providers, local or remote (S3/GCS) storage, text or JSON output, and MCP server integration with Claude Code.
 
 ## Tech Stack
 - **Runtime:** Node 22, ESM (`"type": "module"`)
@@ -24,6 +24,22 @@ Semantic code + git history search CLI with a **signal detection layer** that de
 ## Module Map
 | File | Purpose |
 |------|---------|
+| **Signal Detection** | |
+| `src/signals/types.ts` | `SignalRecord`, `FileProfile`, `Warning`, `AssessmentResult` interfaces |
+| `src/signals/detector.ts` | `DetectorPipeline` orchestrator |
+| `src/signals/detectors/revert.ts` | Finds revert pairs and time-to-revert |
+| `src/signals/detectors/churn.ts` | Identifies file churn hotspots (>2σ above mean) |
+| `src/signals/detectors/ownership.ts` | Computes per-file/directory ownership |
+| `src/signals/detectors/fix-chain.ts` | Finds feature → fix cascades (7-day window) |
+| `src/signals/detectors/adoption.ts` | Detects dependency adoption/abandonment cycles |
+| `src/signals/detectors/stability.ts` | Detects stability shifts over 30-day windows |
+| `src/signals/detectors/breaking.ts` | Detects multi-author fix cascades within 48 hours |
+| `src/signals/store.ts` | LanceDB CRUD for `signals` + `file_profiles` tables |
+| `src/signals/synthesizer.ts` | Warning synthesis rules + temporal decay scoring |
+| `src/signals/indexer.ts` | `analyze` pipeline: loads git history → runs detectors → stores signals + profiles |
+| **Assessment & MCP** | |
+| `src/assess.ts` | `assess()` function: file profile lookup → signal retrieval → warning synthesis |
+| `src/mcp.ts` | MCP server: exposes `cortex_assess`, `cortex_search`, `cortex_git_search`, `cortex_explain`, `cortex_file_profile` |
 | **Core** | |
 | `src/types.ts` | Core interfaces + `CodeSearchConfig` + `DEFAULT_CONFIG` |
 | `src/store.ts` | LanceDB CRUD (chunks + git_history); supports local/remote URI |
@@ -48,22 +64,6 @@ Semantic code + git history search CLI with a **signal detection layer** that de
 | `src/git/indexer.ts` | Git history index pipeline |
 | `src/git/search.ts` | Semantic vector search with metadata filters, sort, dedup |
 | `src/git/cross-ref.ts` | Code ↔ git cross-referencing; `explain()` returns `ExplainResult` |
-| **Signal Detection** | |
-| `src/signals/types.ts` | `SignalRecord`, `FileProfile`, `Warning`, `AssessmentResult` interfaces |
-| `src/signals/detector.ts` | `DetectorPipeline` orchestrator |
-| `src/signals/detectors/revert.ts` | Finds revert pairs and time-to-revert |
-| `src/signals/detectors/churn.ts` | Identifies file churn hotspots (>2σ above mean) |
-| `src/signals/detectors/ownership.ts` | Computes per-file/directory ownership |
-| `src/signals/detectors/fix-chain.ts` | Finds feature → fix cascades (7-day window) |
-| `src/signals/detectors/adoption.ts` | Detects dependency adoption/abandonment cycles |
-| `src/signals/detectors/stability.ts` | Detects stability shifts over 30-day windows |
-| `src/signals/detectors/breaking.ts` | Detects multi-author fix cascades within 48 hours |
-| `src/signals/store.ts` | LanceDB CRUD for `signals` + `file_profiles` tables |
-| `src/signals/synthesizer.ts` | Warning synthesis rules + temporal decay scoring |
-| `src/signals/indexer.ts` | `analyze` pipeline: loads git history → runs detectors → stores signals + profiles |
-| **Signal Detection** | |
-| `src/assess.ts` | `assess()` function: file profile lookup → signal retrieval → warning synthesis |
-| `src/mcp.ts` | MCP server: exposes `cortex_assess`, `cortex_search`, `cortex_git_search`, `cortex_explain`, `cortex_file_profile` |
 
 ## Config (`CodeSearchConfig`)
 Set via `.cortexrc.json` in repo root, CLI flags, or env vars:
@@ -109,11 +109,11 @@ OPENAI_API_KEY=sk-... CORTEX_RECALL_STORE_URI=s3://bucket/cortex \
 ```
 
 ## When to Use Which Command
+- **`assess`** — get warnings before modifying files (stability, ownership, pattern alerts)
+- **`analyze`** — detect patterns (reverts, churn, ownership, fix cascades) from git history
 - **`query`** — find code by what it does ("authentication middleware", "database model")
 - **`git-search`** — find commits by why/when ("why did we switch providers", "auth changes last month")
 - **`explain`** — combined view: code context + git history for a symbol or concept
-- **`analyze`** — detect patterns (reverts, churn, ownership, fix cascades) from git history
-- **`assess`** — get warnings before modifying files (stability, ownership, pattern alerts)
 
 ## Signal Detection Architecture
 ```

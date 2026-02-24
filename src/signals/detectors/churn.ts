@@ -10,6 +10,8 @@ function signalId(type: string, ...parts: string[]): string {
 export class ChurnDetector implements SignalDetector {
   readonly name = 'churn';
 
+  constructor(private config: { sigmaThreshold: number } = { sigmaThreshold: 2 }) {}
+
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
 
@@ -41,8 +43,8 @@ export class ChurnDetector implements SignalDetector {
 
     if (stddev === 0) return signals;
 
-    // Flag files >2σ above mean
-    const threshold = mean + 2 * stddev;
+    // Flag files above configured sigma threshold
+    const threshold = mean + this.config.sigmaThreshold * stddev;
 
     // Pre-compute date boundaries once
     const now = new Date();

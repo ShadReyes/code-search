@@ -17,6 +17,8 @@ interface OwnershipEntry {
 export class OwnershipDetector implements SignalDetector {
   readonly name = 'ownership';
 
+  constructor(private config: { minPercent: number; minCommits: number } = { minPercent: 30, minCommits: 3 }) {}
+
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
 
@@ -73,13 +75,13 @@ export class OwnershipDetector implements SignalDetector {
     // Emit ownership signals for files with a clear owner (>30%)
     for (const [filePath, authors] of fileAuthors) {
       const totalCommits = [...authors.values()].reduce((sum, e) => sum + e.commits, 0);
-      if (totalCommits < 3) continue; // skip files with very few changes
+      if (totalCommits < this.config.minCommits) continue; // skip files with very few changes
 
       const sorted = [...authors.values()].sort((a, b) => b.commits - a.commits);
       const top = sorted[0];
       const percentage = Math.round((top.commits / totalCommits) * 100);
 
-      if (percentage < 30) continue;
+      if (percentage < this.config.minPercent) continue;
 
       const dir = dirname(filePath);
 
@@ -123,7 +125,7 @@ export class OwnershipDetector implements SignalDetector {
 
     for (const [dir, authors] of dirAuthors) {
       const totalCommits = [...authors.values()].reduce((sum, e) => sum + e.commits, 0);
-      if (totalCommits < 5) continue;
+      if (totalCommits < this.config.minCommits + 2) continue;
 
       const sorted = [...authors.entries()]
         .map(([author, data]) => ({ author, ...data }))
@@ -131,7 +133,7 @@ export class OwnershipDetector implements SignalDetector {
       const top = sorted[0];
       const percentage = Math.round((top.commits / totalCommits) * 100);
 
-      if (percentage < 30) continue;
+      if (percentage < this.config.minPercent) continue;
 
       // Compute dominant decision_class for directory
       const dirClassCounts: Record<string, number> = { decision: 0, routine: 0, unknown: 0 };

@@ -33,20 +33,34 @@ export class AdoptionCycleDetector implements SignalDetector {
       if (!chunk.file_path.endsWith('package.json')) continue;
       const text = chunk.text;
 
-      // Look for added dependencies in diff text
+      // Parse added (+) and removed (-) deps from the diff text
+      const addedDeps = new Set<string>();
+      const removedDeps = new Set<string>();
+
       const addMatches = text.matchAll(/\+\s*"([^"]+)":\s*"[^"]*"/g);
       for (const m of addMatches) {
         const dep = m[1];
         if (dep.startsWith('@types/') || dep === 'version' || dep === 'name') continue;
-        if (!depEvents.has(dep)) depEvents.set(dep, []);
-        depEvents.get(dep)!.push({ event: 'add', date: chunk.date, sha: chunk.sha });
+        addedDeps.add(dep);
       }
 
-      // Look for removed dependencies
       const removeMatches = text.matchAll(/-\s*"([^"]+)":\s*"[^"]*"/g);
       for (const m of removeMatches) {
         const dep = m[1];
         if (dep.startsWith('@types/') || dep === 'version' || dep === 'name') continue;
+        removedDeps.add(dep);
+      }
+
+      // Compare: deps in both + and - lines within the same chunk are version
+      // changes (updates), not add/remove events — skip them.
+      for (const dep of addedDeps) {
+        if (removedDeps.has(dep)) continue; // version bump, ignore
+        if (!depEvents.has(dep)) depEvents.set(dep, []);
+        depEvents.get(dep)!.push({ event: 'add', date: chunk.date, sha: chunk.sha });
+      }
+
+      for (const dep of removedDeps) {
+        if (addedDeps.has(dep)) continue; // version bump, ignore
         if (!depEvents.has(dep)) depEvents.set(dep, []);
         depEvents.get(dep)!.push({ event: 'remove', date: chunk.date, sha: chunk.sha });
       }

@@ -6,8 +6,6 @@ function signalId(type: string, ...parts: string[]): string {
   return createHash('sha256').update(type + parts.join(':')).digest('hex').slice(0, 16);
 }
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
 function upperBound(arr: number[], target: number): number {
   let lo = 0, hi = arr.length;
   while (lo < hi) {
@@ -20,6 +18,11 @@ function upperBound(arr: number[], target: number): number {
 
 export class FixAfterFeatureDetector implements SignalDetector {
   readonly name = 'fix_chain';
+  private readonly windowMs: number;
+
+  constructor(private config: { windowDays: number } = { windowDays: 7 }) {
+    this.windowMs = this.config.windowDays * 24 * 60 * 60 * 1000;
+  }
 
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
@@ -67,7 +70,7 @@ export class FixAfterFeatureDetector implements SignalDetector {
       const fixChain: GitHistoryChunk[] = [];
       for (let i = startIdx; i < fixSorted.length; i++) {
         const candDate = fixTimestamps[i];
-        if (candDate - featDate > SEVEN_DAYS_MS) break;
+        if (candDate - featDate > this.windowMs) break;
 
         const candidate = fixSorted[i];
         const candFiles = shaFiles.get(candidate.sha);

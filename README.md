@@ -1,25 +1,27 @@
 # cortex-recall
 
-Semantic code & git history search CLI with a **signal detection layer** that detects patterns, computes risk, and produces actionable warnings. Primary consumer: Claude Code.
+Pre-change risk intelligence for AI-assisted coding. Detects patterns in your git history, computes file-level risk profiles, and warns you before risky modifications — built as an MCP server for Claude Code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 
-- **Multi-language** — TypeScript/TSX/JS/JSX, Python, and Ruby via tree-sitter AST parsing
+- **Signal detection layer** — 7 heuristic detectors for reverts, churn, ownership, fix cascades, breaking changes, adoption cycles, stability shifts
+- **File risk profiles** — stability scores, ownership maps, change frequency analysis
+- **MCP server** — integrates directly with Claude Code for pre-change assessment
+- **Semantic code search** — tree-sitter AST parsing for TypeScript, Python, Ruby
+- **Git history search** — commit + diff search by meaning, not just keywords
 - **Pluggable embeddings** — Ollama (local, default) or OpenAI-compatible APIs
 - **Local + remote storage** — LanceDB on disk, or S3/GCS via URI
-- **JSON output** — `--format json` on all read commands for tool integration
-- **Git history search** — semantic search over commits, diffs, and cross-referenced code
-- **Signal detection layer** — signal detection, file profiles, risk scoring, and actionable warnings
-- **MCP server** — integrates directly with Claude Code as a tool provider
+- **JSON output** — `--format json` on all commands for tool integration
 
 ## How It Works
 
-cortex-recall has three layers:
+cortex-recall analyzes your repository in three layers, then synthesizes actionable warnings:
 
-1. **Code Search** — tree-sitter parses source files into semantic chunks, embeds them, and stores in LanceDB for vector search
-2. **Git History** — commits are streamed, chunked (summary + per-file diffs), embedded, and indexed with metadata (author, date, type, decision class)
-3. **Signal Detection** — signal detectors scan git history for patterns (reverts, churn hotspots, ownership, fix cascades, adoption cycles, breaking changes), compute file profiles, and synthesize actionable warnings
+1. **Code Index** — tree-sitter parses source into semantic chunks, embeds, and stores in LanceDB
+2. **Git History** — commits are streamed, chunked, and embedded with metadata
+3. **Signal Detection** — 7 detectors scan git history for patterns (reverts, churn, ownership, fix cascades, adoption cycles, breaking changes, stability shifts)
+4. **Assessment** — file profiles + signals → prioritized warnings before you modify code
 
 ## Supported Languages
 
@@ -56,28 +58,111 @@ npm install
 ## Quick Start
 
 ```bash
-# 1. Index code
-npx tsx src/index.ts index --full --repo /path/to/repo
+# One-command setup (indexes code, git history, and runs analysis)
+npx tsx src/index.ts setup --repo /path/to/repo
 
-# 2. Index git history
-npx tsx src/index.ts git-index --full --repo /path/to/repo
+# Get risk assessment before modifying files
+npx tsx src/index.ts assess --files src/payments/checkout.ts --repo /path/to/repo
 
-# 3. Analyze patterns (requires git-index)
-npx tsx src/index.ts analyze --full --repo /path/to/repo
-
-# 4. Search code
+# Search code semantically
 npx tsx src/index.ts query "authentication middleware" --repo /path/to/repo
 
-# 5. Search git history
+# Search git history
 npx tsx src/index.ts git-search "why did we switch providers" --repo /path/to/repo
+```
 
-# 6. Get assessment before modifying files
-npx tsx src/index.ts assess --files src/payments/checkout.ts --change-type refactor --repo /path/to/repo
+For a faster first experience (indexes only last 30 days):
+```bash
+npx tsx src/index.ts setup --recent --repo /path/to/repo
 ```
 
 ## CLI Reference
 
 All commands accept `--repo <path>` or use the `CORTEX_RECALL_REPO` env var.
+
+### Signal Analysis & Assessment
+
+```bash
+# One-command setup (indexes code, git history, and runs analysis)
+npx tsx src/index.ts setup --repo /path/to/repo
+
+# Quick setup (recent changes only)
+npx tsx src/index.ts setup --recent --repo /path/to/repo
+
+# Detect patterns from git history (requires git-index)
+npx tsx src/index.ts analyze --full --repo /path/to/repo
+
+# Get assessment for files you plan to modify (requires analyze)
+npx tsx src/index.ts assess --files src/payments/checkout.ts,src/payments/processor.ts --repo /path/to/repo
+
+# With change type context
+npx tsx src/index.ts assess --files src/auth/middleware.ts --change-type refactor --repo /path/to/repo
+
+# JSON output for tool consumption
+npx tsx src/index.ts assess --files src/foo.ts --format json --repo /path/to/repo
+```
+
+### What `assess` Returns
+
+When you run `assess`, you get:
+
+- **Warnings** — prioritized by severity (warning > caution > info):
+  - Stability alerts for volatile files
+  - Ownership info (who owns the code)
+  - Pattern alerts (previous reverts, fix cascades, breaking changes)
+  - Churn hotspot flags
+- **File profiles** — stability score, risk score, change frequency, contributor count
+- **Active signals** — detected patterns relevant to the files
+- **Owners** — who has been modifying the code and how recently
+
+### Signal Detectors
+
+| Detector | What it finds |
+|----------|--------------|
+| **RevertDetector** | Commits that were reverted and how quickly |
+| **ChurnDetector** | Files changed far more than average (>2σ) |
+| **OwnershipDetector** | Who actually owns what (per-file and per-directory) |
+| **FixAfterFeatureDetector** | Features that needed follow-up fixes within 7 days |
+| **AdoptionCycleDetector** | Dependencies that were added, removed, re-added |
+| **StabilityShiftDetector** | Areas that recently stabilized or destabilized |
+| **BreakingChangeDetector** | Changes that caused multi-author fix cascades within 48 hours |
+
+### MCP Server (Claude Code Integration)
+
+cortex-recall runs as an MCP server that Claude Code can connect to:
+
+```bash
+# Start the MCP server
+npx tsx src/mcp.ts
+```
+
+#### Claude Code Configuration
+
+Add to your Claude Code MCP settings (`~/.claude/claude_desktop_config.json` or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "cortex-recall": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/cortex-recall/src/mcp.ts"],
+      "env": {
+        "CORTEX_RECALL_REPO": "/path/to/your/repo"
+      }
+    }
+  }
+}
+```
+
+#### MCP Tools
+
+| Tool | Purpose | When to use |
+|------|---------|-------------|
+| `cortex_assess` | Full assessment with warnings | Before planning changes to a file/module |
+| `cortex_search` | Semantic code search | Understanding current code |
+| `cortex_git_search` | Semantic git history search | Understanding why code is the way it is |
+| `cortex_explain` | Cross-reference (code + history) | Deep-dive on a specific symbol/concept |
+| `cortex_file_profile` | Direct file profile lookup | Quick ownership/stability check |
 
 ### Code Indexing & Search
 
@@ -126,84 +211,6 @@ npx tsx src/index.ts explain "authenticateUser" --repo /path/to/repo
 npx tsx src/index.ts git-stats --repo /path/to/repo
 ```
 
-### Signal Analysis & Assessment
-
-```bash
-# Detect patterns from git history (requires git-index)
-npx tsx src/index.ts analyze --full --repo /path/to/repo
-
-# Get assessment for files you plan to modify (requires analyze)
-npx tsx src/index.ts assess --files src/payments/checkout.ts,src/payments/processor.ts --repo /path/to/repo
-
-# With change type context
-npx tsx src/index.ts assess --files src/auth/middleware.ts --change-type refactor --repo /path/to/repo
-
-# JSON output for tool consumption
-npx tsx src/index.ts assess --files src/foo.ts --format json --repo /path/to/repo
-```
-
-### What `assess` Returns
-
-When you run `assess`, you get:
-
-- **Warnings** — prioritized by severity (warning > caution > info):
-  - Stability alerts for volatile files
-  - Ownership info (who owns the code)
-  - Pattern alerts (previous reverts, fix cascades, breaking changes)
-  - Churn hotspot flags
-- **File profiles** — stability score, risk score, change frequency, contributor count
-- **Active signals** — detected patterns relevant to the files
-- **Owners** — who has been modifying the code and how recently
-
-### Signal Detectors
-
-| Detector | What it finds |
-|----------|--------------|
-| **RevertDetector** | Commits that were reverted and how quickly |
-| **ChurnDetector** | Files changed far more than average (>2σ) |
-| **OwnershipDetector** | Who actually owns what (per-file and per-directory) |
-| **FixAfterFeatureDetector** | Features that needed follow-up fixes within 7 days |
-| **AdoptionCycleDetector** | Dependencies that were added, removed, re-added |
-| **StabilityShiftDetector** | Areas that recently stabilized or destabilized |
-| **BreakingChangeDetector** | Changes that caused multi-author fix cascades within 48 hours |
-
-## MCP Server (Claude Code Integration)
-
-cortex-recall runs as an MCP server that Claude Code can connect to:
-
-```bash
-# Start the MCP server
-npx tsx src/mcp.ts
-```
-
-### Claude Code Configuration
-
-Add to your Claude Code MCP settings (`~/.claude/claude_desktop_config.json` or project `.mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "cortex-recall": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/cortex-recall/src/mcp.ts"],
-      "env": {
-        "CORTEX_RECALL_REPO": "/path/to/your/repo"
-      }
-    }
-  }
-}
-```
-
-### MCP Tools
-
-| Tool | Purpose | When to use |
-|------|---------|-------------|
-| `cortex_assess` | Full assessment with warnings | Before planning changes to a file/module |
-| `cortex_search` | Semantic code search | Understanding current code |
-| `cortex_git_search` | Semantic git history search | Understanding why code is the way it is |
-| `cortex_explain` | Cross-reference (code + history) | Deep-dive on a specific symbol/concept |
-| `cortex_file_profile` | Direct file profile lookup | Quick ownership/stability check |
-
 ## Configuration
 
 Create `.cortexrc.json` at the repo root (or use `cortex-recall init`):
@@ -219,7 +226,15 @@ Create `.cortexrc.json` at the repo root (or use `cortex-recall init`):
   "embeddingProvider": "ollama",
   "embeddingModel": "nomic-embed-text",
   "embeddingBatchSize": 50,
-  "searchLimit": 5
+  "searchLimit": 5,
+  "signals": {
+    "churnSigmaThreshold": 2,
+    "ownershipMinPercent": 30,
+    "ownershipMinCommits": 3,
+    "fixChainWindowDays": 7,
+    "breakingWindowHours": 48,
+    "stabilityShiftWindowDays": 30
+  }
 }
 ```
 
@@ -235,13 +250,27 @@ Create `.cortexrc.json` at the repo root (or use `cortex-recall init`):
 
 ```
 src/
+  signals/
+    types.ts          SignalRecord, FileProfile, Warning, AssessmentResult
+    detector.ts       DetectorPipeline orchestrator
+    store.ts          LanceDB CRUD for signals + file_profiles
+    synthesizer.ts    Warning synthesis rules + temporal decay
+    indexer.ts        Analyze pipeline (git history → signals → profiles)
+    detectors/
+      revert.ts       RevertDetector
+      churn.ts        ChurnDetector
+      ownership.ts    OwnershipDetector
+      fix-chain.ts    FixAfterFeatureDetector
+      adoption.ts     AdoptionCycleDetector
+      stability.ts    StabilityShiftDetector
+      breaking.ts     BreakingChangeDetector
+  assess.ts           Assessment: file profiles → signals → warnings
+  mcp.ts              MCP server entry point
   index.ts            CLI entry point (Commander.js)
   types.ts            Core types: CodeChunk, GitHistoryChunk, Config
   store.ts            LanceDB vector store (chunks + git_history)
   indexer.ts           Full + incremental code indexing
   search.ts           Code query embedding + vector search
-  assess.ts           Assessment: file profiles → signals → warnings
-  mcp.ts              MCP server entry point
   embeddings/
     provider.ts       EmbeddingProvider interface + factory
     ollama.ts         OllamaProvider — local Ollama embeddings
@@ -258,20 +287,6 @@ src/
     indexer.ts        Git history indexing pipeline
     search.ts         Semantic search with filters, sort, dedup
     cross-ref.ts      Code ↔ git cross-referencing (explain)
-  signals/
-    types.ts          SignalRecord, FileProfile, Warning, AssessmentResult
-    detector.ts       DetectorPipeline orchestrator
-    store.ts          LanceDB CRUD for signals + file_profiles
-    synthesizer.ts    Warning synthesis rules + temporal decay
-    indexer.ts        Analyze pipeline (git history → signals → profiles)
-    detectors/
-      revert.ts       RevertDetector
-      churn.ts        ChurnDetector
-      ownership.ts    OwnershipDetector
-      fix-chain.ts    FixAfterFeatureDetector
-      adoption.ts     AdoptionCycleDetector
-      stability.ts    StabilityShiftDetector
-      breaking.ts     BreakingChangeDetector
 ```
 
 ## Data Locations

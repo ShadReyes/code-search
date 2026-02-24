@@ -7,10 +7,13 @@ function signalId(type: string, ...parts: string[]): string {
   return createHash('sha256').update(type + parts.join(':')).digest('hex').slice(0, 16);
 }
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-
 export class StabilityShiftDetector implements SignalDetector {
   readonly name = 'stability_shift';
+  private readonly windowMs: number;
+
+  constructor(private config: { windowDays: number } = { windowDays: 30 }) {
+    this.windowMs = this.config.windowDays * 24 * 60 * 60 * 1000;
+  }
 
   detect(commits: GitHistoryChunk[]): SignalRecord[] {
     const signals: SignalRecord[] = [];
@@ -38,9 +41,9 @@ export class StabilityShiftDetector implements SignalDetector {
     }
 
     const now = Date.now();
-    const thirtyDaysAgo = now - THIRTY_DAYS_MS;
-    const sixtyDaysAgo = now - 2 * THIRTY_DAYS_MS;
-    const ninetyDaysAgo = now - 3 * THIRTY_DAYS_MS;
+    const thirtyDaysAgo = now - this.windowMs;
+    const sixtyDaysAgo = now - 2 * this.windowMs;
+    const ninetyDaysAgo = now - 3 * this.windowMs;
 
     for (const [dir, changes] of dirChanges) {
       if (changes.length < 10) continue; // need enough data

@@ -50,6 +50,7 @@ export interface Warning {
   category: WarningCategory;
   message: string;
   evidence: string[]; // SHAs
+  signal_ids: string[]; // IDs of signals that triggered this warning
 }
 
 export interface AssessmentResult {

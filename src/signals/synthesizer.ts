@@ -41,6 +41,7 @@ export function synthesizeWarnings(
         category: 'stability',
         message: `${profile.path} has a stability score of ${profile.stability_score}/100. Changed ${profile.total_changes} times with ${profile.revert_count} revert${profile.revert_count !== 1 ? 's' : ''}.`,
         evidence: [],
+        signal_ids: profile.active_signal_ids,
       });
     } else if (profile.stability_score < 50 && changeType === 'refactor') {
       warnings.push({
@@ -48,6 +49,7 @@ export function synthesizeWarnings(
         category: 'stability',
         message: `Refactoring a volatile area: ${profile.path} (stability ${profile.stability_score}/100). Consider smaller incremental changes.`,
         evidence: [],
+        signal_ids: profile.active_signal_ids,
       });
     }
   }
@@ -60,6 +62,7 @@ export function synthesizeWarnings(
         category: 'ownership',
         message: `${profile.primary_owner.author} owns ${profile.path} (${profile.primary_owner.percentage}% of changes, ${profile.primary_owner.commits} commits). Last active: ${profile.primary_owner.last_change.slice(0, 10)}.`,
         evidence: [],
+        signal_ids: profile.active_signal_ids,
       });
     } else if (profile.contributor_count > 0 && (!profile.primary_owner || profile.primary_owner.percentage < 30)) {
       warnings.push({
@@ -67,6 +70,7 @@ export function synthesizeWarnings(
         category: 'ownership',
         message: `No clear owner for ${profile.path}. ${profile.contributor_count} contributors${profile.primary_owner ? `, highest is ${profile.primary_owner.percentage}%` : ''}.`,
         evidence: [],
+        signal_ids: profile.active_signal_ids,
       });
     }
   }
@@ -88,6 +92,7 @@ export function synthesizeWarnings(
           category: 'pattern',
           message: `A previous change to this area was reverted (${(meta.original_sha as string)?.slice(0, 7) || 'unknown'}, ${timeStr}). ${meta.original_subject || ''}`,
           evidence: signal.contributing_shas,
+          signal_ids: [signal.id],
         });
         break;
       }
@@ -99,6 +104,7 @@ export function synthesizeWarnings(
           category: 'pattern',
           message: `Feature "${meta.feature_subject}" (${(meta.feature_sha as string)?.slice(0, 7)}) required ${meta.fix_count} follow-up fix${(meta.fix_count as number) > 1 ? 'es' : ''} over ${meta.day_span} day${(meta.day_span as number) !== 1 ? 's' : ''}.`,
           evidence: signal.contributing_shas,
+          signal_ids: [signal.id],
         });
         break;
       }
@@ -110,6 +116,7 @@ export function synthesizeWarnings(
           category: 'churn',
           message: `${meta.file} is a churn hotspot (${meta.count} changes, ${meta.sigma}σ above repo mean). Trend: ${meta.trend}.`,
           evidence: signal.contributing_shas.slice(0, 5),
+          signal_ids: [signal.id],
         });
         break;
       }
@@ -121,6 +128,7 @@ export function synthesizeWarnings(
           category: 'breaking',
           message: `A previous change here (${(meta.trigger_sha as string)?.slice(0, 7)}) caused fixes from ${meta.author_count} different authors within 48 hours. Blast radius: ${meta.affected_files} files.`,
           evidence: signal.contributing_shas,
+          signal_ids: [signal.id],
         });
         break;
       }
@@ -132,6 +140,7 @@ export function synthesizeWarnings(
           category: 'pattern',
           message: `${meta.subject || 'This dependency'} has gone through ${meta.cycle_count} adoption cycles. Current status: ${meta.current_status}.`,
           evidence: signal.contributing_shas,
+          signal_ids: [signal.id],
         });
         break;
       }

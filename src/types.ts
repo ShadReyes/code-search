@@ -92,6 +92,15 @@ export interface IndexState {
   embeddingDimension: number;
 }
 
+export interface SignalsConfig {
+  churnSigmaThreshold: number;
+  ownershipMinPercent: number;
+  ownershipMinCommits: number;
+  fixChainWindowDays: number;
+  breakingWindowHours: number;
+  stabilityShiftWindowDays: number;
+}
+
 export interface CodeSearchConfig {
   include: string[];
   exclude: string[];
@@ -107,6 +116,7 @@ export interface CodeSearchConfig {
   searchLimit: number;
   storeUri?: string;
   maxAnalyzeChunks?: number;
+  signals?: SignalsConfig;
   git?: GitConfig;
 }
 
@@ -146,6 +156,14 @@ export const DEFAULT_CONFIG: CodeSearchConfig = {
   embeddingBatchSize: 50,
   searchLimit: 5,
   maxAnalyzeChunks: 200000,
+  signals: {
+    churnSigmaThreshold: 2,
+    ownershipMinPercent: 30,
+    ownershipMinCommits: 3,
+    fixChainWindowDays: 7,
+    breakingWindowHours: 48,
+    stabilityShiftWindowDays: 30,
+  },
   git: {
     includeFileChunks: true,
     includeMergeGroups: true,

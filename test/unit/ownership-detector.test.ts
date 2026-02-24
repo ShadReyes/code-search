@@ -132,6 +132,38 @@ describe('OwnershipDetector', () => {
     expect(dirSignals).toHaveLength(0);
   });
 
+  it('custom minPercent=50 raises the ownership bar', () => {
+    // Alice: 2 commits, Bob: 1 commit → Alice at 67%
+    // With default minPercent=30: Alice qualifies
+    // With minPercent=50: Alice still qualifies (67% >= 50%)
+    // But if Alice: 2, Bob: 2, Charlie: 1 → Alice at 40%
+    // With minPercent=30: Alice qualifies (40% >= 30%)
+    // With minPercent=50: Alice does NOT qualify (40% < 50%)
+    const chunks: GitHistoryChunk[] = [
+      makeChunk({ id: 'd1', sha: 'sha1', chunk_type: 'file_diff', file_path: 'src/auth/login.ts', author: 'Alice', date: '2025-01-10T10:00:00Z' }),
+      makeChunk({ id: 'd2', sha: 'sha2', chunk_type: 'file_diff', file_path: 'src/auth/login.ts', author: 'Alice', date: '2025-01-11T10:00:00Z' }),
+      makeChunk({ id: 'd3', sha: 'sha3', chunk_type: 'file_diff', file_path: 'src/auth/login.ts', author: 'Bob', date: '2025-01-12T10:00:00Z' }),
+      makeChunk({ id: 'd4', sha: 'sha4', chunk_type: 'file_diff', file_path: 'src/auth/login.ts', author: 'Bob', date: '2025-01-13T10:00:00Z' }),
+      makeChunk({ id: 'd5', sha: 'sha5', chunk_type: 'file_diff', file_path: 'src/auth/login.ts', author: 'Charlie', date: '2025-01-14T10:00:00Z' }),
+    ];
+
+    const defaultDetector = new OwnershipDetector();
+    const strictDetector = new OwnershipDetector({ minPercent: 50, minCommits: 1 });
+
+    const defaultSignals = defaultDetector.detect(chunks);
+    const strictSignals = strictDetector.detect(chunks);
+
+    const defaultFileSignals = defaultSignals.filter(s => s.metadata.file !== undefined);
+    const strictFileSignals = strictSignals.filter(s => s.metadata.file !== undefined);
+
+    // Default: Alice at 40% >= 30% → signal emitted
+    expect(defaultFileSignals).toHaveLength(1);
+    expect(defaultFileSignals[0].metadata.primary_author).toBe('Alice');
+
+    // Strict: Alice at 40% < 50% → no signal
+    expect(strictFileSignals).toHaveLength(0);
+  });
+
   it('temporal_scope uses correct date range', () => {
     const chunks: GitHistoryChunk[] = [
       makeChunk({ id: 'd1', sha: 'sha1', chunk_type: 'file_diff', file_path: 'src/auth/login.ts', author: 'Alice', date: '2025-01-05T10:00:00Z' }),

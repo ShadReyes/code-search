@@ -315,6 +315,42 @@ describe('AdoptionCycleDetector', () => {
     expect(signals[0].severity).toBe('warning');
   });
 
+  it('ignores version bumps (same dep with + and - in same chunk)', () => {
+    // A version bump has both a removed and added line for the same dep in one chunk.
+    // This should NOT count as an add or remove event.
+    const chunks: GitHistoryChunk[] = [
+      makeChunk({
+        id: 'c1',
+        sha: 'aaa1',
+        chunk_type: 'file_diff',
+        file_path: 'package.json',
+        date: '2025-01-10T10:00:00Z',
+        text: '+  "lodash": "^4.17.21"',
+      }),
+      makeChunk({
+        id: 'c2',
+        sha: 'bbb2',
+        chunk_type: 'file_diff',
+        file_path: 'package.json',
+        date: '2025-02-10T10:00:00Z',
+        text: '-  "lodash": "^4.17.21"\n+  "lodash": "^4.18.0"',
+      }),
+      makeChunk({
+        id: 'c3',
+        sha: 'ccc3',
+        chunk_type: 'file_diff',
+        file_path: 'package.json',
+        date: '2025-03-10T10:00:00Z',
+        text: '-  "lodash": "^4.18.0"\n+  "lodash": "^4.19.0"',
+      }),
+    ];
+
+    // Only 1 real event (the initial add). Version bumps are ignored.
+    // Fewer than 2 transitions → no signal.
+    const signals = detector.detect(chunks);
+    expect(signals).toHaveLength(0);
+  });
+
   it('severity is caution when cycleCount < 3', () => {
     // 3 events: add, remove, add = 2 transitions, ceil(2/2) = 1 cycle
     const chunks: GitHistoryChunk[] = [

@@ -199,6 +199,73 @@ export async function indexGitIncremental(
   console.log(chalk.green(`Incremental git index: ${commitCount} new commits, ${chunkCount} chunks added`));
 }
 
+export async function indexGitRecent(
+  repoPath: string,
+  config: CodeSearchConfig,
+  verbose: boolean = false,
+): Promise<void> {
+  const gitConfig = { ...config.git!, maxCommits: 250 };
+
+  validateGitRepo(repoPath);
+
+  console.log(chalk.blue('Starting recent git history index (last 30 days, max 250 commits)...'));
+
+  const provider = createProvider(config);
+  await provider.healthCheck();
+  const dimension = await provider.probeDimension();
+
+  await initStore(config.storeUri);
+  await initGitHistoryTable();
+  await dropGitTable();
+
+  let commitCount = 0;
+  let chunkCount = 0;
+  let batch: GitHistoryChunk[] = [];
+  let isFirstBatch = true;
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  for await (const commit of extractAllCommits(repoPath, gitConfig)) {
+    // Skip commits older than 30 days
+    if (commit.date < thirtyDaysAgo) continue;
+
+    commitCount++;
+
+    const chunks = await chunkCommit(commit, repoPath, gitConfig);
+    const enriched = chunks.map(c => enrichChunk(c, gitConfig));
+    batch.push(...enriched);
+
+    if (batch.length >= 20) {
+      await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
+      chunkCount += batch.length;
+      isFirstBatch = false;
+      batch = [];
+
+      process.stdout.write(
+        `\r${chalk.dim(`Indexed ${commitCount} recent commits (${chunkCount} chunks)...`)}`,
+      );
+    }
+  }
+
+  if (batch.length > 0) {
+    await processBatch(batch, provider, config.embeddingBatchSize, dimension, verbose, isFirstBatch);
+    chunkCount += batch.length;
+  }
+
+  process.stdout.write('\r' + ' '.repeat(80) + '\r');
+
+  const state: GitIndexState = {
+    lastCommit: getHeadSha(repoPath),
+    lastIndexedAt: new Date().toISOString(),
+    totalChunks: chunkCount,
+    totalCommits: commitCount,
+    embeddingDimension: dimension,
+  };
+  saveGitState(state);
+
+  console.log(chalk.green(`Recent git index complete: ${commitCount} commits, ${chunkCount} chunks`));
+}
+
 function getHeadSha(repoPath: string): string {
   try {
     return execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8' }).trim();

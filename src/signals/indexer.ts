@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { createProvider } from '../embeddings/provider.js';
 import { initStore, initGitHistoryTable } from '../store.js';
 import type { CodeSearchConfig, GitHistoryChunk } from '../types.js';
+import { DEFAULT_CONFIG } from '../types.js';
 import type { AnalyzeState, FileProfile, SignalRecord } from './types.js';
 import { DetectorPipeline } from './detector.js';
 import { RevertDetector } from './detectors/revert.js';
@@ -251,14 +252,15 @@ export async function analyzeFullPipeline(
 
   // Step 2: Run detector pipeline
   console.log(chalk.dim('Running signal detectors...'));
+  const signalsConfig = config.signals || DEFAULT_CONFIG.signals!;
   const pipeline = new DetectorPipeline([
     new RevertDetector(),
-    new ChurnDetector(),
-    new OwnershipDetector(),
-    new FixAfterFeatureDetector(),
+    new ChurnDetector({ sigmaThreshold: signalsConfig.churnSigmaThreshold }),
+    new OwnershipDetector({ minPercent: signalsConfig.ownershipMinPercent, minCommits: signalsConfig.ownershipMinCommits }),
+    new FixAfterFeatureDetector({ windowDays: signalsConfig.fixChainWindowDays }),
     new AdoptionCycleDetector(),
-    new StabilityShiftDetector(),
-    new BreakingChangeDetector(),
+    new StabilityShiftDetector({ windowDays: signalsConfig.stabilityShiftWindowDays }),
+    new BreakingChangeDetector({ windowHours: signalsConfig.breakingWindowHours }),
   ]);
 
   const signals = pipeline.run(allCommits);
@@ -355,9 +357,10 @@ export async function analyzeIncrementalPipeline(
   allCommits.sort((a, b) => dateCache2.get(a.date)! - dateCache2.get(b.date)!);
 
   // Run only windowed detectors on full set
+  const signalsConfig = config.signals || DEFAULT_CONFIG.signals!;
   const pipeline = new DetectorPipeline([
-    new ChurnDetector(),
-    new OwnershipDetector(),
+    new ChurnDetector({ sigmaThreshold: signalsConfig.churnSigmaThreshold }),
+    new OwnershipDetector({ minPercent: signalsConfig.ownershipMinPercent, minCommits: signalsConfig.ownershipMinCommits }),
   ]);
 
   console.log(chalk.dim('Running windowed detectors...'));

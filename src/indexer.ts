@@ -311,3 +311,99 @@ export async function indexIncremental(
     `Re-indexed ${relevantFiles.length} files (${allChunks.length} chunks updated, ${deletedCount} files deleted)`
   ));
 }
+
+export async function indexRecent(
+  repoRoot: string,
+  verbose: boolean = false,
+  configOverride?: CodeSearchConfig,
+): Promise<void> {
+  const config = configOverride ?? loadConfig(repoRoot, verbose);
+
+  console.log(chalk.blue('Starting recent-changes index (last 30 days)...'));
+
+  // Get files changed in last 30 days via git
+  let recentFiles: string[];
+  try {
+    const output = execSync(
+      'git log --since="30 days ago" --name-only --pretty=format: HEAD',
+      { cwd: repoRoot, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 },
+    ).trim();
+    recentFiles = [...new Set(output.split('\n').filter(Boolean))];
+  } catch {
+    console.log(chalk.yellow('Could not determine recent files. Running full index...'));
+    return indexFull(repoRoot, verbose, configOverride);
+  }
+
+  // Filter to relevant extensions
+  const relevantFiles = recentFiles.filter(f => {
+    return config.include.some(pattern => minimatch(f, pattern)) &&
+      !config.exclude.some(pattern => minimatch(f, pattern)) &&
+      (!isTestFile(f) || config.indexTests);
+  });
+
+  if (relevantFiles.length === 0) {
+    console.log(chalk.yellow('No recently changed files match indexing criteria.'));
+    return;
+  }
+
+  console.log(chalk.blue(`Found ${relevantFiles.length} recently changed files`));
+
+  // Initialize
+  const provider = createProvider(config);
+  await provider.healthCheck();
+  const dimension = await provider.probeDimension();
+
+  await registry.initAll();
+  await initStore(config.storeUri);
+
+  // Parse and chunk
+  const allChunks: CodeChunk[] = [];
+  let skipped = 0;
+
+  for (const relFile of relevantFiles) {
+    const absPath = join(repoRoot, relFile);
+    if (!existsSync(absPath)) { skipped++; continue; }
+
+    try {
+      const content = readFileSync(absPath, 'utf-8');
+      const lines = content.split('\n').length;
+      if (lines > config.maxFileLines) continue;
+
+      const plugin = registry.getPluginForFile(absPath);
+      if (!plugin) { skipped++; continue; }
+      const chunks = plugin.chunkFile(absPath, content, repoRoot, config.chunkMaxTokens);
+      allChunks.push(...chunks);
+    } catch (err) {
+      skipped++;
+      if (verbose) {
+        console.warn(chalk.yellow(`Skipped ${relFile}: ${err instanceof Error ? err.message : err}`));
+      }
+    }
+  }
+
+  console.log(chalk.blue(`Extracted ${allChunks.length} chunks from ${relevantFiles.length - skipped} files`));
+
+  if (allChunks.length === 0) {
+    console.log(chalk.yellow('No chunks to index.'));
+    return;
+  }
+
+  // Embed and insert (overwrite mode for clean start)
+  const contents = allChunks.map(c => c.content);
+  const vectors = await provider.embedBatch(contents, { batchSize: config.embeddingBatchSize, dimension, verbose });
+
+  await dropTable();
+  await insertChunks(allChunks, vectors, true);
+
+  // Save state
+  const state: IndexState = {
+    lastCommit: getGitCommitHash(repoRoot),
+    lastIndexedAt: new Date().toISOString(),
+    totalChunks: allChunks.length,
+    totalFiles: relevantFiles.length - skipped,
+    embeddingDimension: dimension,
+  };
+  saveState(state);
+
+  console.log(chalk.green(`Recent index complete: ${state.totalChunks} chunks from ${state.totalFiles} files`));
+}

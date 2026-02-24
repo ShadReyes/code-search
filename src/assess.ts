@@ -142,6 +142,9 @@ export function formatAssessResult(result: AssessmentResult): string {
       if (w.evidence.length > 0) {
         lines.push(chalk.dim(`  Evidence: ${w.evidence.map(s => s.slice(0, 7)).join(', ')}`));
       }
+      if (w.signal_ids.length > 0) {
+        lines.push(chalk.dim(`  Triggered by: ${w.signal_ids.join(', ')}`));
+      }
     }
   }
 
