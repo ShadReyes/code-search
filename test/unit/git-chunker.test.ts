@@ -8,6 +8,7 @@ vi.mock('../../src/git/extractor.js', () => ({
 }));
 
 const { chunkCommit } = await import('../../src/git/chunker.js');
+const { getCommitDiffs } = await import('../../src/git/extractor.js');
 
 function makeCommit(overrides: Partial<GitCommitRaw> = {}): GitCommitRaw {
   return {
@@ -147,5 +148,56 @@ describe('chunkCommit', () => {
     expect(summary.additions).toBe(40); // 30 + 10
     expect(summary.deletions).toBe(5);
     expect(summary.files_changed).toBe(2);
+  });
+
+  it('truncates long diffs at maxDiffCharsPerFile', async () => {
+    const longDiff = 'a'.repeat(5000);
+    vi.mocked(getCommitDiffs).mockResolvedValueOnce(
+      new Map([['src/auth/login.ts', longDiff], ['src/auth/types.ts', '']]),
+    );
+    const config = makeConfig({ includeFileChunks: true, maxDiffCharsPerFile: 3000 });
+    const chunks = await chunkCommit(makeCommit(), '/repo', config);
+    const fileDiff = chunks.find(c => c.chunk_type === 'file_diff' && c.file_path === 'src/auth/login.ts')!;
+    expect(fileDiff).toBeDefined();
+    expect(fileDiff.text).toContain('... truncated (2000 more chars)');
+    expect(fileDiff.text.length).toBeLessThan(5000);
+  });
+
+  it('short diff passes through unchanged', async () => {
+    const shortDiff = '+const foo = 1;\n-const bar = 2;';
+    vi.mocked(getCommitDiffs).mockResolvedValueOnce(
+      new Map([['src/auth/login.ts', shortDiff], ['src/auth/types.ts', '']]),
+    );
+    const config = makeConfig({ includeFileChunks: true, maxDiffCharsPerFile: 3000 });
+    const chunks = await chunkCommit(makeCommit(), '/repo', config);
+    const fileDiff = chunks.find(c => c.chunk_type === 'file_diff' && c.file_path === 'src/auth/login.ts')!;
+    expect(fileDiff).toBeDefined();
+    expect(fileDiff.text).toContain(shortDiff);
+    expect(fileDiff.text).not.toContain('truncated');
+  });
+
+  it('custom maxDiffCharsPerFile is respected', async () => {
+    const diff = 'z'.repeat(200);
+    vi.mocked(getCommitDiffs).mockResolvedValueOnce(
+      new Map([['src/auth/login.ts', diff], ['src/auth/types.ts', '']]),
+    );
+    const config = makeConfig({ includeFileChunks: true, maxDiffCharsPerFile: 100 });
+    const chunks = await chunkCommit(makeCommit(), '/repo', config);
+    const fileDiff = chunks.find(c => c.chunk_type === 'file_diff' && c.file_path === 'src/auth/login.ts')!;
+    expect(fileDiff).toBeDefined();
+    expect(fileDiff.text).toContain('... truncated (100 more chars)');
+  });
+
+  it('defaults to 3000 when maxDiffCharsPerFile is undefined', async () => {
+    const diff = 'w'.repeat(4000);
+    vi.mocked(getCommitDiffs).mockResolvedValueOnce(
+      new Map([['src/auth/login.ts', diff], ['src/auth/types.ts', '']]),
+    );
+    // makeConfig omits maxDiffCharsPerFile → undefined at runtime → ?? 3000 fallback
+    const config = makeConfig({ includeFileChunks: true });
+    const chunks = await chunkCommit(makeCommit(), '/repo', config);
+    const fileDiff = chunks.find(c => c.chunk_type === 'file_diff' && c.file_path === 'src/auth/login.ts')!;
+    expect(fileDiff).toBeDefined();
+    expect(fileDiff.text).toContain('... truncated (1000 more chars)');
   });
 });
