@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import type { EmbeddingProvider, EmbedBatchOptions } from './provider.js';
+import { runWithConcurrency } from './provider.js';
 
 const MAX_EMBED_CHARS = 8000;
 
@@ -64,44 +65,58 @@ export class OpenAIProvider implements EmbeddingProvider {
     const dimension = opts.dimension ?? 0;
     const verbose = opts.verbose ?? false;
     // prefix is silently ignored for OpenAI
+    const concurrency = opts.concurrency ?? 3;
 
-    const allEmbeddings: number[][] = [];
     const totalBatches = Math.ceil(texts.length / batchSize);
+    const allEmbeddings: number[][] = new Array(texts.length);
     let fallbackCount = 0;
+    let completedBatches = 0;
 
+    // Create batch tasks
+    const batchTasks: Array<{ index: number; start: number; end: number; batch: string[] }> = [];
     for (let i = 0; i < texts.length; i += batchSize) {
-      const batchNum = Math.floor(i / batchSize) + 1;
-      const batchEnd = Math.min(i + batchSize, texts.length);
-      const batch = texts.slice(i, batchEnd).map(truncateForEmbedding);
+      const start = i;
+      const end = Math.min(i + batchSize, texts.length);
+      const batch = texts.slice(start, end).map(truncateForEmbedding);
+      batchTasks.push({ index: batchTasks.length, start, end, batch });
+    }
 
-      process.stdout.write(
-        `\r${chalk.dim(`Embedding batch ${batchNum}/${totalBatches} (chunks ${i + 1}-${batchEnd}/${texts.length})...`)}`
-      );
-
+    // Process with concurrency limiter
+    const processBatch = async (task: typeof batchTasks[0]) => {
+      const { start, end, batch } = task;
       try {
         const embeddings = await this.embedOneBatch(batch);
-        allEmbeddings.push(...embeddings);
+        for (let j = 0; j < embeddings.length; j++) {
+          allEmbeddings[start + j] = embeddings[j];
+        }
       } catch (err) {
         if (verbose) {
           console.log(chalk.yellow(
-            `\n  Batch ${batchNum} failed: ${err instanceof Error ? err.message : err}`
+            `\n  Batch ${task.index + 1} failed: ${err instanceof Error ? err.message : err}`
           ));
           console.log(chalk.yellow('  Falling back to individual embedding...'));
         }
-        for (const text of batch) {
+        // Fallback: embed individually, but concurrently within the batch
+        const fallbackTasks = batch.map((text, j) => async () => {
           const embedding = await this.embedSingleText(text, dimension, verbose);
-          allEmbeddings.push(embedding);
+          allEmbeddings[start + j] = embedding;
           fallbackCount++;
-        }
+        });
+        await runWithConcurrency(fallbackTasks, concurrency);
       }
-    }
+      completedBatches++;
+      process.stdout.write(
+        `\r${chalk.dim(`Embedding batch ${completedBatches}/${totalBatches} (chunks ${end}/${texts.length})...`)}`
+      );
+    };
+
+    const tasks = batchTasks.map(t => () => processBatch(t));
+    await runWithConcurrency(tasks, concurrency);
 
     process.stdout.write('\r' + ' '.repeat(80) + '\r');
-
     if (fallbackCount > 0) {
       console.log(chalk.yellow(`${fallbackCount} chunks required individual embedding (batch too large)`));
     }
-
     return allEmbeddings;
   }
 

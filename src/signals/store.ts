@@ -97,9 +97,12 @@ export async function replaceSignalsByType(
     return;
   }
 
-  // Delete rows matching the given types
-  for (const type of types) {
-    await table.delete(`type = '${type.replace(/'/g, "''")}'`);
+  // Delete rows matching the given types (batched into single query)
+  if (types.length === 1) {
+    await table.delete(`type = '${types[0].replace(/'/g, "''")}'`);
+  } else if (types.length > 1) {
+    const conditions = types.map(t => `type = '${t.replace(/'/g, "''")}'`).join(' OR ');
+    await table.delete(conditions);
   }
 
   // Append new signals
@@ -226,9 +229,12 @@ export async function upsertFileProfiles(
   if (overwrite || !table) {
     tables.set(PROFILES_TABLE, await db.createTable(PROFILES_TABLE, records, { mode: 'overwrite' }));
   } else {
-    // Delete existing profiles for these paths, then add
-    for (const profile of profiles) {
-      await table.delete(`path = '${profile.path.replace(/'/g, "''")}'`);
+    // Delete existing profiles for these paths, then add (batched)
+    const BATCH = 100;
+    for (let i = 0; i < profiles.length; i += BATCH) {
+      const batch = profiles.slice(i, i + BATCH);
+      const conditions = batch.map(p => `path = '${p.path.replace(/'/g, "''")}'`).join(' OR ');
+      await table.delete(conditions);
     }
     await table.add(records);
   }

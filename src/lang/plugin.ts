@@ -10,19 +10,23 @@ export interface LanguagePlugin {
 
 export class PluginRegistry {
   private plugins: LanguagePlugin[] = [];
+  private extensionMap = new Map<string, LanguagePlugin>();
 
   register(plugin: LanguagePlugin): void {
     this.plugins.push(plugin);
+    for (const ext of plugin.extensions) {
+      this.extensionMap.set(ext, plugin);
+    }
   }
 
   getPluginForFile(filePath: string): LanguagePlugin | undefined {
     const ext = filePath.slice(filePath.lastIndexOf('.'));
-    return this.plugins.find(p => p.extensions.has(ext));
+    return this.extensionMap.get(ext);
   }
 
   isTestFile(relativePath: string): boolean {
     const ext = relativePath.slice(relativePath.lastIndexOf('.'));
-    const plugin = this.plugins.find(p => p.extensions.has(ext));
+    const plugin = this.extensionMap.get(ext);
     if (!plugin) return false;
     return plugin.testPatterns.some(re => re.test(relativePath));
   }

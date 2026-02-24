@@ -18,20 +18,36 @@ function chunkId(filePath: string, lineStart: number, lineEnd: number): string {
     .slice(0, 16);
 }
 
+const packageNameCache = new Map<string, string>();
+
 function detectPackageName(filePath: string): string {
-  let dir = dirname(filePath);
+  const startDir = dirname(filePath);
+  if (packageNameCache.has(startDir)) return packageNameCache.get(startDir)!;
+
+  const visited: string[] = [];
+  let dir = startDir;
   while (dir !== '/' && dir !== '.') {
+    if (packageNameCache.has(dir)) {
+      const result = packageNameCache.get(dir)!;
+      for (const d of visited) packageNameCache.set(d, result);
+      return result;
+    }
+    visited.push(dir);
     const pkgPath = join(dir, 'package.json');
     if (existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        return pkg.name || 'unknown';
+        const name = pkg.name || 'unknown';
+        for (const d of visited) packageNameCache.set(d, name);
+        return name;
       } catch {
+        for (const d of visited) packageNameCache.set(d, 'unknown');
         return 'unknown';
       }
     }
     dir = dirname(dir);
   }
+  for (const d of visited) packageNameCache.set(d, 'root');
   return 'root';
 }
 

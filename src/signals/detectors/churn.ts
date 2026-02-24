@@ -14,14 +14,14 @@ export class ChurnDetector implements SignalDetector {
     const signals: SignalRecord[] = [];
 
     // Count changes per file from file_diff chunks
-    const fileCounts = new Map<string, { count: number; dates: string[]; shas: string[] }>();
+    const fileCounts = new Map<string, { count: number; dates: string[]; shas: Set<string> }>();
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
 
     for (const chunk of fileDiffs) {
-      const entry = fileCounts.get(chunk.file_path) || { count: 0, dates: [], shas: [] };
+      const entry = fileCounts.get(chunk.file_path) || { count: 0, dates: [], shas: new Set<string>() };
       entry.count++;
       entry.dates.push(chunk.date);
-      if (!entry.shas.includes(chunk.sha)) entry.shas.push(chunk.sha);
+      entry.shas.add(chunk.sha);
       fileCounts.set(chunk.file_path, entry);
     }
 
@@ -38,22 +38,24 @@ export class ChurnDetector implements SignalDetector {
     // Flag files >2σ above mean
     const threshold = mean + 2 * stddev;
 
+    // Pre-compute date boundaries once
+    const now = new Date();
+    const thirtyDaysAgoMs = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+    const sixtyDaysAgoMs = now.getTime() - 60 * 24 * 60 * 60 * 1000;
+
     for (const [filePath, entry] of fileCounts) {
       if (entry.count <= threshold) continue;
 
       const sigma = (entry.count - mean) / stddev;
       const sortedDates = entry.dates.sort();
 
-      // Compute trend: compare last 30 days vs previous 30 days
-      const now = new Date();
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-
-      const recent = entry.dates.filter(d => new Date(d) >= thirtyDaysAgo).length;
-      const previous = entry.dates.filter(d => {
-        const dt = new Date(d);
-        return dt >= sixtyDaysAgo && dt < thirtyDaysAgo;
-      }).length;
+      // Compute trend: single-pass date filtering
+      let recent = 0, previous = 0;
+      for (const d of entry.dates) {
+        const t = new Date(d).getTime();
+        if (t >= thirtyDaysAgoMs) recent++;
+        else if (t >= sixtyDaysAgoMs) previous++;
+      }
 
       let trend: 'increasing' | 'decreasing' | 'stable';
       if (previous === 0) {
@@ -74,7 +76,7 @@ export class ChurnDetector implements SignalDetector {
         severity: sigma > 3 ? 'warning' : 'caution',
         confidence: Math.min(0.95, 0.6 + sigma * 0.1),
         directory_scope: dir === '.' ? '.' : dir,
-        contributing_shas: entry.shas.slice(0, 20), // cap at 20 most relevant
+        contributing_shas: [...entry.shas].slice(0, 20),
         temporal_scope: {
           start: sortedDates[0],
           end: sortedDates[sortedDates.length - 1],

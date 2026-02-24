@@ -48,9 +48,8 @@ async function doFullIndex(
   const files = discoverFiles(repoPath, config);
 
   const allChunks: CodeChunk[] = [];
-  for (const filePath of files) {
+  for (const { path: filePath, content } of files) {
     try {
-      const content = readFileSync(filePath, 'utf-8');
       const chunks = chunkFile(filePath, content, repoPath, config.chunkMaxTokens);
       allChunks.push(...chunks);
     } catch {
@@ -68,7 +67,7 @@ async function doFullIndex(
     await insertChunks(allChunks, vectors, true);
   }
 
-  return files;
+  return files.map(f => f.path);
 }
 
 /**

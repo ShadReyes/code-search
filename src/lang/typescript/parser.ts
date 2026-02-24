@@ -14,6 +14,8 @@ function resolveWasmPath(pkg: string, subpath: string): string {
 
 let tsLanguage: Language;
 let tsxLanguage: Language;
+let tsParser: Parser;
+let tsxParser: Parser;
 let initialized = false;
 
 export async function initParser(): Promise<void> {
@@ -39,6 +41,11 @@ export async function initParser(): Promise<void> {
     const tsxWasmBytes = readFileSync(tsxWasmPath);
     tsLanguage = await Language.load(tsWasmBytes);
     tsxLanguage = await Language.load(tsxWasmBytes);
+
+    tsParser = new Parser();
+    tsParser.setLanguage(tsLanguage);
+    tsxParser = new Parser();
+    tsxParser.setLanguage(tsxLanguage);
   } catch (err) {
     throw new Error(
       `Failed to load tree-sitter WASM grammars: ${err instanceof Error ? err.message : err}\n` +
@@ -58,21 +65,20 @@ export function parseFile(filePath: string, content: string): Tree {
   }
 
   const ext = filePath.slice(filePath.lastIndexOf('.'));
-  const parser = new Parser();
 
   if (TSX_EXTENSIONS.has(ext)) {
-    parser.setLanguage(tsxLanguage);
+    return tsxParser.parse(content);
   } else if (TS_EXTENSIONS.has(ext)) {
-    parser.setLanguage(tsLanguage);
+    return tsParser.parse(content);
   } else {
     throw new Error(`Unsupported file extension: ${ext}`);
   }
-
-  return parser.parse(content);
 }
 
 export function _resetForBenchmark(): void {
   initialized = false;
+  tsParser = undefined as unknown as Parser;
+  tsxParser = undefined as unknown as Parser;
 }
 
 export type { Tree, Node };

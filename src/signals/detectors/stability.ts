@@ -38,15 +38,20 @@ export class StabilityShiftDetector implements SignalDetector {
     for (const [dir, changes] of dirChanges) {
       if (changes.length < 10) continue; // need enough data
 
-      const recent = changes.filter(c => new Date(c.date).getTime() >= thirtyDaysAgo).length;
-      const previous = changes.filter(c => {
+      // Single-pass date filtering
+      let recent = 0, previous = 0, older = 0;
+      const recentShas: string[] = [];
+      for (const c of changes) {
         const t = new Date(c.date).getTime();
-        return t >= sixtyDaysAgo && t < thirtyDaysAgo;
-      }).length;
-      const older = changes.filter(c => {
-        const t = new Date(c.date).getTime();
-        return t >= ninetyDaysAgo && t < sixtyDaysAgo;
-      }).length;
+        if (t >= thirtyDaysAgo) {
+          recent++;
+          recentShas.push(c.sha);
+        } else if (t >= sixtyDaysAgo) {
+          previous++;
+        } else if (t >= ninetyDaysAgo) {
+          older++;
+        }
+      }
 
       // Detect significant shift (>50% change in frequency)
       if (previous === 0) continue;
@@ -62,10 +67,6 @@ export class StabilityShiftDetector implements SignalDetector {
       }
 
       if (!shift) continue;
-
-      const recentShas = changes
-        .filter(c => new Date(c.date).getTime() >= thirtyDaysAgo)
-        .map(c => c.sha);
 
       signals.push({
         id: signalId('stability_shift', dir),

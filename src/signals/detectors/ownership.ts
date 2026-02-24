@@ -11,7 +11,7 @@ interface OwnershipEntry {
   author: string;
   commits: number;
   lastChange: string;
-  shas: string[];
+  shas: Set<string>;
 }
 
 export class OwnershipDetector implements SignalDetector {
@@ -21,10 +21,12 @@ export class OwnershipDetector implements SignalDetector {
     const signals: SignalRecord[] = [];
     const fileDiffs = commits.filter(c => c.chunk_type === 'file_diff' && c.file_path);
 
-    // Group by file, then by author
+    // Group by file and directory in a single pass
     const fileAuthors = new Map<string, Map<string, OwnershipEntry>>();
+    const dirAuthors = new Map<string, Map<string, OwnershipEntry>>();
 
     for (const chunk of fileDiffs) {
+      // File-level
       if (!fileAuthors.has(chunk.file_path)) {
         fileAuthors.set(chunk.file_path, new Map());
       }
@@ -34,12 +36,31 @@ export class OwnershipDetector implements SignalDetector {
         author: chunk.author,
         commits: 0,
         lastChange: chunk.date,
-        shas: [],
+        shas: new Set<string>(),
       };
       entry.commits++;
       if (chunk.date > entry.lastChange) entry.lastChange = chunk.date;
-      if (!entry.shas.includes(chunk.sha)) entry.shas.push(chunk.sha);
+      entry.shas.add(chunk.sha);
       authors.set(chunk.author, entry);
+
+      // Directory-level
+      const dir = dirname(chunk.file_path);
+      if (dir === '.') continue;
+
+      if (!dirAuthors.has(dir)) {
+        dirAuthors.set(dir, new Map());
+      }
+      const dAuthors = dirAuthors.get(dir)!;
+      const dEntry = dAuthors.get(chunk.author) || {
+        author: chunk.author,
+        commits: 0,
+        lastChange: chunk.date,
+        shas: new Set<string>(),
+      };
+      dEntry.commits++;
+      if (chunk.date > dEntry.lastChange) dEntry.lastChange = chunk.date;
+      dEntry.shas.add(chunk.sha);
+      dAuthors.set(chunk.author, dEntry);
     }
 
     // Emit ownership signals for files with a clear owner (>30%)
@@ -62,7 +83,7 @@ export class OwnershipDetector implements SignalDetector {
         severity: 'info',
         confidence: Math.min(0.95, 0.5 + percentage / 200),
         directory_scope: dir === '.' ? '.' : dir,
-        contributing_shas: top.shas.slice(0, 10),
+        contributing_shas: [...top.shas].slice(0, 10),
         temporal_scope: {
           start: sorted[sorted.length - 1].lastChange,
           end: top.lastChange,
@@ -84,24 +105,6 @@ export class OwnershipDetector implements SignalDetector {
       });
     }
 
-    // Also compute directory-level ownership
-    const dirAuthors = new Map<string, Map<string, { commits: number; lastChange: string; shas: string[] }>>();
-
-    for (const chunk of fileDiffs) {
-      const dir = dirname(chunk.file_path);
-      if (dir === '.') continue;
-
-      if (!dirAuthors.has(dir)) {
-        dirAuthors.set(dir, new Map());
-      }
-      const authors = dirAuthors.get(dir)!;
-      const entry = authors.get(chunk.author) || { commits: 0, lastChange: chunk.date, shas: [] };
-      entry.commits++;
-      if (chunk.date > entry.lastChange) entry.lastChange = chunk.date;
-      if (!entry.shas.includes(chunk.sha)) entry.shas.push(chunk.sha);
-      authors.set(chunk.author, entry);
-    }
-
     for (const [dir, authors] of dirAuthors) {
       const totalCommits = [...authors.values()].reduce((sum, e) => sum + e.commits, 0);
       if (totalCommits < 5) continue;
@@ -121,7 +124,7 @@ export class OwnershipDetector implements SignalDetector {
         severity: 'info',
         confidence: Math.min(0.95, 0.5 + percentage / 200),
         directory_scope: dir,
-        contributing_shas: top.shas.slice(0, 10),
+        contributing_shas: [...top.shas].slice(0, 10),
         temporal_scope: {
           start: sorted[sorted.length - 1].lastChange,
           end: top.lastChange,

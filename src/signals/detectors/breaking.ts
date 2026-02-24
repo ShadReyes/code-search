@@ -9,6 +9,16 @@ function signalId(type: string, ...parts: string[]): string {
 
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 
+function upperBound(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export class BreakingChangeDetector implements SignalDetector {
   readonly name = 'breaking_change';
 
@@ -30,35 +40,48 @@ export class BreakingChangeDetector implements SignalDetector {
       shaAuthor.set(chunk.sha, chunk.author);
     }
 
+    // Pre-parse all timestamps
+    const tsCache = new Map<string, number>();
+    for (const c of summaries) {
+      if (!tsCache.has(c.sha)) tsCache.set(c.sha, new Date(c.date).getTime());
+    }
+
     // Sort summaries by date
     const sorted = [...summaries].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      (a, b) => tsCache.get(a.sha)! - tsCache.get(b.sha)!
     );
+
+    // Pre-filter and sort fix commits with their timestamps
+    const fixSorted = sorted.filter(c => c.commit_type === 'fix');
+    const fixTimestamps = fixSorted.map(c => tsCache.get(c.sha)!);
 
     // For each non-fix commit, look for multi-author fix responses within 48h
     for (const commit of sorted) {
       if (commit.commit_type === 'fix') continue;
 
-      const commitDate = new Date(commit.date).getTime();
+      const commitDate = tsCache.get(commit.sha)!;
       const commitFiles = shaFiles.get(commit.sha);
       if (!commitFiles || commitFiles.size === 0) continue;
 
-      // Find fix commits within 48h that touch overlapping files from different authors
+      // Pre-compute commit dirs once per outer commit
+      const commitDirs = new Set([...commitFiles].map(f => dirname(f)));
+
+      // Binary search to find first fix where timestamp > commitDate
+      const startIdx = upperBound(fixTimestamps, commitDate);
+
       const fixResponses: { sha: string; author: string; date: string }[] = [];
       const fixAuthors = new Set<string>();
 
-      for (const candidate of sorted) {
-        if (candidate.commit_type !== 'fix') continue;
-        const candDate = new Date(candidate.date).getTime();
-        if (candDate <= commitDate) continue;
-        if (candDate - commitDate > FORTY_EIGHT_HOURS_MS) continue;
+      for (let i = startIdx; i < fixSorted.length; i++) {
+        const candidate = fixSorted[i];
+        const candDate = fixTimestamps[i];
+        if (candDate - commitDate > FORTY_EIGHT_HOURS_MS) break;
         if (candidate.author === commit.author) continue; // same author doesn't count
 
         const candFiles = shaFiles.get(candidate.sha);
         if (!candFiles) continue;
 
         // Check for file overlap with original or its directories
-        const commitDirs = new Set([...commitFiles].map(f => dirname(f)));
         const hasOverlap = [...candFiles].some(f =>
           commitFiles.has(f) || commitDirs.has(dirname(f))
         );

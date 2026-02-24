@@ -111,7 +111,7 @@ describe('discoverFiles', () => {
     writeFile('node_modules/pkg/index.ts', 'export const x = 1;');
     const files = discoverFiles(tmpDir, { ...DEFAULT_CONFIG });
     expect(files).toHaveLength(1);
-    expect(files[0]).toContain('src/index.ts');
+    expect(files[0].path).toContain('src/index.ts');
   });
 
   it('skips test files by default (indexTests=false)', () => {
@@ -120,7 +120,7 @@ describe('discoverFiles', () => {
     writeFile('__tests__/foo.ts', 'test("y", () => {});');
     const files = discoverFiles(tmpDir, { ...DEFAULT_CONFIG, indexTests: false });
     expect(files).toHaveLength(1);
-    expect(files[0]).toContain('src/index.ts');
+    expect(files[0].path).toContain('src/index.ts');
   });
 
   it('includes test files when indexTests=true', () => {
@@ -135,7 +135,7 @@ describe('discoverFiles', () => {
     writeFile('lib/main.py', 'def main():\n    pass\n');
     const files = discoverFiles(tmpDir, { ...DEFAULT_CONFIG });
     expect(files).toHaveLength(2);
-    const exts = files.map(f => f.slice(f.lastIndexOf('.')));
+    const exts = files.map(f => f.path.slice(f.path.lastIndexOf('.')));
     expect(exts).toContain('.ts');
     expect(exts).toContain('.py');
   });
@@ -146,6 +146,6 @@ describe('discoverFiles', () => {
     writeFile('src/big.ts', bigContent);
     const files = discoverFiles(tmpDir, { ...DEFAULT_CONFIG, maxFileLines: 2000 });
     expect(files).toHaveLength(1);
-    expect(files[0]).toContain('small.ts');
+    expect(files[0].path).toContain('small.ts');
   });
 });

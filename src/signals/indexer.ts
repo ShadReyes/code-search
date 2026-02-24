@@ -234,8 +234,12 @@ export async function analyzeFullPipeline(
 
   console.log(chalk.dim(`Loaded ${allCommits.length} chunks from git history`));
 
-  // Sort by date for temporal analysis
-  allCommits.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  // Sort by date for temporal analysis (pre-parse dates to avoid repeated parsing in sort comparator)
+  const dateCache = new Map<string, number>();
+  for (const c of allCommits) {
+    if (!dateCache.has(c.date)) dateCache.set(c.date, new Date(c.date).getTime());
+  }
+  allCommits.sort((a, b) => dateCache.get(a.date)! - dateCache.get(b.date)!);
 
   // Step 2: Run detector pipeline
   console.log(chalk.dim('Running signal detectors...'));
@@ -336,7 +340,11 @@ export async function analyzeIncrementalPipeline(
     return;
   }
 
-  allCommits.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const dateCache2 = new Map<string, number>();
+  for (const c of allCommits) {
+    if (!dateCache2.has(c.date)) dateCache2.set(c.date, new Date(c.date).getTime());
+  }
+  allCommits.sort((a, b) => dateCache2.get(a.date)! - dateCache2.get(b.date)!);
 
   // Run only windowed detectors on full set
   const pipeline = new DetectorPipeline([

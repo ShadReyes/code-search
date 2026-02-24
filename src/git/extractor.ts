@@ -20,6 +20,17 @@ const LOCK_FILES = new Set([
 const COMMIT_SEP = 'COMMIT_SEP';
 const EXEC_OPTS = { encoding: 'utf8' as const, timeout: 30000 };
 
+const compiledPatternCache = new Map<string, RegExp>();
+
+function getCompiledPatterns(patterns: string[]): RegExp[] {
+  return patterns.map(pat => {
+    if (!compiledPatternCache.has(pat)) {
+      compiledPatternCache.set(pat, new RegExp(pat, 'i'));
+    }
+    return compiledPatternCache.get(pat)!;
+  });
+}
+
 export function validateGitRepo(repoPath: string): void {
   try {
     execSync('git rev-parse --is-inside-work-tree', { cwd: repoPath, ...EXEC_OPTS, stdio: 'pipe' });
@@ -33,14 +44,14 @@ function isLockFile(filePath: string): boolean {
   return LOCK_FILES.has(basename);
 }
 
-function shouldSkipCommit(commit: GitCommitRaw, config: GitConfig): boolean {
+function shouldSkipCommit(commit: GitCommitRaw, config: GitConfig, compiledPatterns: RegExp[]): boolean {
   // Skip bot authors (case-insensitive)
   if (config.skipBotAuthors.some(bot => commit.author.toLowerCase().includes(bot.toLowerCase()))) {
     return true;
   }
 
-  // Skip if subject matches any skip pattern
-  if (config.skipMessagePatterns.some(pat => new RegExp(pat, 'i').test(commit.subject))) {
+  // Skip if subject matches any skip pattern (pre-compiled)
+  if (compiledPatterns.some(re => re.test(commit.subject))) {
     return true;
   }
 
@@ -141,6 +152,8 @@ async function* streamCommits(
 ): AsyncGenerator<GitCommitRaw> {
   validateGitRepo(repoPath);
 
+  const compiledPatterns = getCompiledPatterns(config.skipMessagePatterns);
+
   const proc = spawn('git', args, {
     cwd: repoPath,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -160,7 +173,7 @@ async function* streamCommits(
       // Flush previous commit
       if (currentHeader !== null) {
         const commit = parseCommitBlock(currentHeader, numstatLines);
-        if (commit && !shouldSkipCommit(commit, config)) {
+        if (commit && !shouldSkipCommit(commit, config, compiledPatterns)) {
           yield commit;
           commitCount++;
           if (config.maxCommits > 0 && commitCount >= config.maxCommits) {
@@ -186,7 +199,7 @@ async function* streamCommits(
   // Flush last commit
   if (currentHeader !== null) {
     const commit = parseCommitBlock(currentHeader, numstatLines);
-    if (commit && !shouldSkipCommit(commit, config)) {
+    if (commit && !shouldSkipCommit(commit, config, compiledPatterns)) {
       if (config.maxCommits === 0 || commitCount < config.maxCommits) {
         yield commit;
       }

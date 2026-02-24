@@ -8,6 +8,16 @@ function signalId(type: string, ...parts: string[]): string {
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
+function upperBound(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export class FixAfterFeatureDetector implements SignalDetector {
   readonly name = 'fix_chain';
 
@@ -23,27 +33,39 @@ export class FixAfterFeatureDetector implements SignalDetector {
       shaFiles.get(chunk.sha)!.add(chunk.file_path);
     }
 
+    // Pre-parse all timestamps
+    const tsCache = new Map<string, number>();
+    for (const c of summaries) {
+      if (!tsCache.has(c.sha)) tsCache.set(c.sha, new Date(c.date).getTime());
+    }
+
     // Sort summaries by date ascending
     const sorted = [...summaries].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      (a, b) => tsCache.get(a.sha)! - tsCache.get(b.sha)!
     );
+
+    // Pre-filter fix commits sorted by date, with pre-parsed timestamps
+    const fixSorted = sorted.filter(c => c.commit_type === 'fix');
+    const fixTimestamps = fixSorted.map(c => tsCache.get(c.sha)!);
 
     // Find feat commits and look for subsequent fix commits on same files within 7 days
     const featCommits = sorted.filter(c => c.commit_type === 'feat');
 
     for (const feat of featCommits) {
-      const featDate = new Date(feat.date).getTime();
+      const featDate = tsCache.get(feat.sha)!;
       const featFiles = shaFiles.get(feat.sha);
       if (!featFiles || featFiles.size === 0) continue;
 
+      // Binary search to find first fix where timestamp > featDate
+      const startIdx = upperBound(fixTimestamps, featDate);
+
       // Find fix commits within 7-day window that touch overlapping files
       const fixChain: GitHistoryChunk[] = [];
-      for (const candidate of sorted) {
-        if (candidate.commit_type !== 'fix') continue;
-        const candDate = new Date(candidate.date).getTime();
-        if (candDate <= featDate) continue; // must be after the feat
-        if (candDate - featDate > SEVEN_DAYS_MS) continue; // within 7 days
+      for (let i = startIdx; i < fixSorted.length; i++) {
+        const candDate = fixTimestamps[i];
+        if (candDate - featDate > SEVEN_DAYS_MS) break;
 
+        const candidate = fixSorted[i];
         const candFiles = shaFiles.get(candidate.sha);
         if (!candFiles) continue;
 
@@ -58,7 +80,7 @@ export class FixAfterFeatureDetector implements SignalDetector {
 
       const lastFix = fixChain[fixChain.length - 1];
       const daySpan = Math.round(
-        (new Date(lastFix.date).getTime() - featDate) / (1000 * 60 * 60 * 24)
+        (tsCache.get(lastFix.sha)! - featDate) / (1000 * 60 * 60 * 24)
       );
 
       const allShas = [feat.sha, ...fixChain.map(c => c.sha)];

@@ -49,7 +49,12 @@ export function loadConfig(repoRoot: string, verbose: boolean = false): CodeSear
   return config;
 }
 
-export function discoverFiles(repoRoot: string, config: CodeSearchConfig): string[] {
+export interface DiscoveredFile {
+  path: string;
+  content: string;
+}
+
+export function discoverFiles(repoRoot: string, config: CodeSearchConfig): DiscoveredFile[] {
   const allFiles: string[] = [];
 
   for (const pattern of config.include) {
@@ -65,31 +70,34 @@ export function discoverFiles(repoRoot: string, config: CodeSearchConfig): strin
   // Deduplicate
   const unique = [...new Set(allFiles)];
 
-  // Filter by maxFileLines, skip directories/unreadable
-  return unique.filter(filePath => {
+  // Filter by maxFileLines, skip directories/unreadable, keep content
+  const results: DiscoveredFile[] = [];
+
+  for (const filePath of unique) {
     try {
       const stat = statSync(filePath);
-      if (!stat.isFile()) return false;
+      if (!stat.isFile()) continue;
     } catch {
-      return false;
+      continue;
     }
 
     try {
       const content = readFileSync(filePath, 'utf-8');
       const lines = content.split('\n').length;
-      if (lines > config.maxFileLines) return false;
+      if (lines > config.maxFileLines) continue;
+
+      if (!config.indexTests) {
+        const rel = relative(repoRoot, filePath);
+        if (isTestFile(rel)) continue;
+      }
+
+      results.push({ path: filePath, content });
     } catch {
-      return false;
+      continue;
     }
+  }
 
-    // Skip test files if indexTests is false
-    if (!config.indexTests) {
-      const rel = relative(repoRoot, filePath);
-      if (isTestFile(rel)) return false;
-    }
-
-    return true;
-  });
+  return results;
 }
 
 export function isTestFile(relativePath: string): boolean {
@@ -145,11 +153,10 @@ export async function indexFull(
   const allChunks: CodeChunk[] = [];
   let skipped = 0;
 
-  for (const filePath of files) {
+  for (const { path: filePath, content } of files) {
     try {
       const plugin = registry.getPluginForFile(filePath);
       if (!plugin) { skipped++; continue; }
-      const content = readFileSync(filePath, 'utf-8');
       const chunks = plugin.chunkFile(filePath, content, repoRoot, config.chunkMaxTokens);
       allChunks.push(...chunks);
     } catch (err) {

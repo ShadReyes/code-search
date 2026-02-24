@@ -7,6 +7,26 @@ export interface EmbedBatchOptions {
   dimension?: number;
   verbose?: boolean;
   prefix?: string;
+  concurrency?: number;
+}
+
+export async function runWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  concurrency: number,
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < tasks.length) {
+      const index = nextIndex++;
+      results[index] = await tasks[index]();
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 export interface EmbeddingProvider {

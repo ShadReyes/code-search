@@ -43,6 +43,19 @@ export class RevertDetector implements SignalDetector {
       bySha.set(c.sha, c);
     }
 
+    // Build lookup maps for O(1) revert matching
+    // 1. SHA prefix (7-char) -> full SHA
+    const shaPrefix = new Map<string, string>();
+    for (const sha of bySha.keys()) {
+      shaPrefix.set(sha.slice(0, 7), sha);
+    }
+
+    // 2. Subject -> SHA for quoted subject matching
+    const subjectToSha = new Map<string, string>();
+    for (const c of summaries) {
+      subjectToSha.set(c.subject, c.sha);
+    }
+
     for (const commit of summaries) {
       const subject = commit.subject.toLowerCase();
       if (!subject.includes('revert')) continue;
@@ -55,11 +68,14 @@ export class RevertDetector implements SignalDetector {
       const revertMatch = (commit.subject + ' ' + commit.body).match(/reverts?\s+commit\s+([0-9a-f]{7,40})/i);
       if (revertMatch) {
         const candidateSha = revertMatch[1];
-        // Find full SHA match
-        for (const sha of bySha.keys()) {
-          if (sha.startsWith(candidateSha)) {
-            originalSha = sha;
-            break;
+        // Try exact match first
+        if (bySha.has(candidateSha)) {
+          originalSha = candidateSha;
+        } else if (candidateSha.length >= 7) {
+          // Try prefix lookup
+          const fullSha = shaPrefix.get(candidateSha.slice(0, 7));
+          if (fullSha && fullSha.startsWith(candidateSha)) {
+            originalSha = fullSha;
           }
         }
       }
@@ -69,11 +85,9 @@ export class RevertDetector implements SignalDetector {
         const quotedMatch = commit.subject.match(/[Rr]evert\s+"([^"]+)"/);
         if (quotedMatch) {
           const originalSubject = quotedMatch[1];
-          for (const c of summaries) {
-            if (c.sha !== commit.sha && c.subject === originalSubject) {
-              originalSha = c.sha;
-              break;
-            }
+          const matchedSha = subjectToSha.get(originalSubject);
+          if (matchedSha && matchedSha !== commit.sha) {
+            originalSha = matchedSha;
           }
         }
       }
